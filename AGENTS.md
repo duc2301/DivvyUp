@@ -15,12 +15,14 @@ Hệ quả quan trọng nhất của kiến trúc này: **RLS của Supabase là
 | Routing | expo-router, typed routes bật | đã cài |
 | Compiler | React Compiler bật (`experiments.reactCompiler`) | đã cài |
 | Animation | react-native-reanimated 4 + worklets | đã cài |
-| Data | Supabase (Postgres + RLS + Auth) | **chưa cài** |
-| Styling | NativeWind (Tailwind) | **chưa cài** |
+| Data | Supabase (Postgres + RLS + Auth) | đã cài, đã nối client |
+| Styling | NativeWind (Tailwind) | đã cài, đã cấu hình |
 | UI primitives | react-native-reusables (founded-labs) | **chưa cài** |
-| UI phức tạp | UI Kitten (akveo) + Eva Design | **chưa cài** |
+| UI phức tạp | UI Kitten (akveo) + Eva Design | cài package, **chưa nối `ApplicationProvider`** |
 
-> Mục "chưa cài" là quyết định đã chốt nhưng chưa thực thi. **Cho tới khi cài xong, không viết `className=`, không import `@ui-kitten/*`, không import `@supabase/*`.** Dùng `StyleSheet` + `src/constants/theme.ts` như hiện trạng.
+> **Chưa import `@ui-kitten/*`** cho tới khi `ApplicationProvider` được nối kèm cầu nối theme đọc lại từ CSS variable trong `src/global.css`. **Chưa dùng component của react-native-reusables** cho tới khi copy chúng vào repo.
+
+Nguồn chân lý của schema là `supabase/migrations/`. Đổi schema thì phải cập nhật `src/lib/supabase/database.types.ts` cho khớp.
 
 ---
 

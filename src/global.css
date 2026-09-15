@@ -1,9 +1,66 @@
-:root {
-  --font-display:
-    Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
-    Segoe UI Symbol, Noto Color Emoji;
-  --font-mono:
-    ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
-  --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
-  --font-serif: Georgia, 'Times New Roman', serif;
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  NGUỒN CHÂN LÝ DUY NHẤT CHO MÀU (AGENTS.md mục 2).
+  Không hardcode màu trong component. Không định nghĩa lại màu ở nơi khác.
+  Khi nối UI Kitten vào, theme Eva phải đọc lại các biến này, không tự khai màu riêng.
+
+  Giá trị viết theo dạng "H S% L%" (không bọc hsl()) để tailwind.config.js
+  ghép thành hsl(var(--x)) — đây cũng là quy ước của react-native-reusables.
+*/
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 240 10% 4%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 240 10% 4%;
+
+    --muted: 240 5% 96%;
+    --muted-foreground: 240 4% 46%;
+
+    --border: 240 6% 90%;
+    --input: 240 6% 90%;
+
+    --primary: 211 86% 53%; /* khớp màu splash screen trong app.json */
+    --primary-foreground: 0 0% 100%;
+
+    /* Ngữ nghĩa DivvyUp: dương = được nhận lại, âm = đang nợ.
+       Lưu ý: không bao giờ chỉ dùng màu để phân biệt hai trạng thái này —
+       luôn kèm dấu +/- hoặc nhãn chữ, vì người mù màu không phân biệt được. */
+    --positive: 142 71% 36%;
+    --negative: 0 72% 51%;
+  }
+
+  .dark:root {
+    --background: 240 10% 4%;
+    --foreground: 0 0% 98%;
+
+    --card: 240 6% 10%;
+    --card-foreground: 0 0% 98%;
+
+    --muted: 240 4% 16%;
+    --muted-foreground: 240 5% 65%;
+
+    --border: 240 4% 16%;
+    --input: 240 4% 16%;
+
+    --primary: 211 86% 60%;
+    --primary-foreground: 240 10% 4%;
+
+    --positive: 142 61% 48%;
+    --negative: 0 84% 65%;
+  }
+
+  :root {
+    --font-display:
+      Spline Sans, Inter, ui-sans-serif, system-ui, sans-serif, Apple Color Emoji, Segoe UI Emoji,
+      Segoe UI Symbol, Noto Color Emoji;
+    --font-mono:
+      ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, Liberation Mono, Courier New, monospace;
+    --font-rounded: 'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif;
+    --font-serif: Georgia, 'Times New Roman', serif;
+  }
 }
