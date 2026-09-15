@@ -1,0 +1,23 @@
+{
+  "enabledPlugins": {
+    "expo@claude-plugins-official": true
+  },
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(npm run lint:*)",
+      "Bash(npx tsc --noEmit)"
+    ],
+    "deny": [
+      "Bash(eas build:*)",
+      "Bash(xcodebuild:*)",
+      "Bash(./gradlew:*)",
+      "Bash(gradlew:*)",
+      "Bash(npx expo prebuild:*)",
+      "Read(./.env)",
+      "Read(./.env.*)"
+    ]
+  }
+}
