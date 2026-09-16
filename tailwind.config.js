@@ -32,10 +32,12 @@ module.exports = {
         negative: 'hsl(var(--negative) / <alpha-value>)',
       },
       fontFamily: {
-        // Poppins khớp với chữ trong logo "Divvy up". Chỉ dùng cho tiêu đề;
-        // thân bài vẫn để font hệ thống vì nó có sẵn đủ dấu tiếng Việt và
-        // không tốn thời gian tải.
-        display: ['Poppins_600SemiBold'],
+        // Be Vietnam Pro thay cho Poppins: Poppins KHÔNG có dấu tiếng Việt tổ hợp
+        // (ế, ử, ầ…), máy tự mượn glyph của font khác nên tên chuyến đi như
+        // "Đà Lạt cuối tuần" bị lệch nét giữa chừng. Be Vietnam Pro cùng dáng
+        // hình học với chữ trong logo và được thiết kế riêng cho tiếng Việt.
+        // Chỉ dùng cho tiêu đề; thân bài vẫn để font hệ thống.
+        display: ['BeVietnamPro_600SemiBold'],
       },
       borderRadius: {
         // Bo tròn lớn hơn mặc định để hợp với ngôn ngữ thẻ mềm.

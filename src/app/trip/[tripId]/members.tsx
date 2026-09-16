@@ -1,6 +1,6 @@
 import { useLocalSearchParams } from 'expo-router';
 import { useState } from 'react';
-import { Pressable, Text, TextInput, View } from 'react-native';
+import { FlatList, Text, TextInput, View } from 'react-native';
 
 import { AppHeader } from '@/components/ui/app-header';
 import { Button } from '@/components/ui/button';
@@ -14,7 +14,6 @@ import {
   createTripGroup,
   listTripGroups,
   listTripMembers,
-  removeTripMember,
   renameTripMember,
 } from '@/lib/data/manager';
 import { describeError, useAsync } from '@/lib/data/use-async';
@@ -22,11 +21,17 @@ import { describeError, useAsync } from '@/lib/data/use-async';
 interface MemberRowProps {
   readonly member: TripMember;
   readonly onRename: (id: string, name: string) => void;
-  readonly onRemove: (id: string) => void;
-  readonly busy: boolean;
 }
 
-function MemberRow({ member, onRename, onRemove, busy }: MemberRowProps) {
+/**
+ * Một dòng thành viên: chỉ đổi được tên.
+ *
+ * KHÔNG có nút xoá, có chủ đích. Người đã gắn với khoản chi mà biến mất thì
+ * phần nợ của họ cũng biến mất theo, tổng số dư của chuyến lệch khỏi 0. DB cũng
+ * chặn việc này (migration 20260916_1040), nút ở đây chỉ để khỏi mời người dùng
+ * vào một lỗi chắc chắn.
+ */
+function MemberRow({ member, onRename }: MemberRowProps) {
   const [draft, setDraft] = useState(member.displayName);
 
   return (
@@ -54,15 +59,6 @@ function MemberRow({ member, onRename, onRemove, busy }: MemberRowProps) {
           đã vào app
         </Text>
       ) : null}
-
-      <Pressable
-        accessibilityRole="button"
-        accessibilityLabel={`Xoá ${member.displayName} khỏi chuyến đi`}
-        disabled={busy || member.isMe}
-        onPress={() => onRemove(member.id)}
-        className={`h-11 w-11 items-center justify-center active:bg-muted rounded-full ${member.isMe ? 'opacity-30' : ''}`}>
-        <Text className="text-lg text-muted-foreground">×</Text>
-      </Pressable>
     </View>
   );
 }
@@ -108,108 +104,115 @@ export default function TripMembersScreen() {
 
   return (
     <>
-      <Screen header={<AppHeader title="Thành viên" subtitle="Nhóm và người trong chuyến" showBack />}>
-        {loading && data === null ? <LoadingView /> : null}
-        {error ? <ErrorView message={error} onRetry={reload} /> : null}
-        {actionError ? <ErrorView message={actionError} /> : null}
+      <Screen header={<AppHeader title="Thành viên" subtitle="Nhóm và người trong chuyến" showBack />} scroll={false}>
+        <FlatList
+          className="flex-1 px-4 pt-2 pb-24"
+          contentContainerStyle={{ gap: 16 }}
+          keyboardShouldPersistTaps="handled"
+          ListHeaderComponent={
+            <>
+              {loading && data === null ? <LoadingView /> : null}
+              {error ? <ErrorView message={error} onRetry={reload} /> : null}
+              {actionError ? <ErrorView message={actionError} /> : null}
 
-        {data ? (
-          <>
-            {data.groups.map((group) => (
-              <SectionCard key={group.id} title={group.name}>
-                {membersOf(group).length === 0 ? (
-                  <Text className="text-sm text-muted-foreground">Nhóm này chưa có ai.</Text>
-                ) : (
-                  membersOf(group).map((member) => (
-                    <MemberRow
-                      key={member.id}
-                      member={member}
-                      busy={busy}
-                      onRename={(id, name) => void run(() => renameTripMember(id, name))}
-                      onRemove={(id) => void run(() => removeTripMember(id))}
-                    />
-                  ))
-                )}
-              </SectionCard>
-            ))}
+              {data ? (
+                <>
+                  {data.groups.map((group) => (
+                    <SectionCard key={group.id} title={group.name}>
+                      {membersOf(group).length === 0 ? (
+                        <Text className="text-sm text-muted-foreground">Nhóm này chưa có ai.</Text>
+                      ) : (
+                        membersOf(group).map((member) => (
+                          <MemberRow
+                            key={member.id}
+                            member={member}
+                            onRename={(id, name) => void run(() => renameTripMember(id, name))}
+                          />
+                        ))
+                      )}
+                    </SectionCard>
+                  ))}
 
-            {ungrouped.length > 0 || data.groups.length === 0 ? (
-              <SectionCard title={data.groups.length === 0 ? 'Thành viên' : 'Chưa thuộc nhóm nào'}>
-                {ungrouped.length === 0 ? (
-                  <Text className="text-sm text-muted-foreground">Chưa có ai.</Text>
-                ) : (
-                  ungrouped.map((member) => (
-                    <MemberRow
-                      key={member.id}
-                      member={member}
-                      busy={busy}
-                      onRename={(id, name) => void run(() => renameTripMember(id, name))}
-                      onRemove={(id) => void run(() => removeTripMember(id))}
-                    />
-                  ))
-                )}
-              </SectionCard>
-            ) : null}
+                  {ungrouped.length > 0 || data.groups.length === 0 ? (
+                    <SectionCard title={data.groups.length === 0 ? 'Thành viên' : 'Chưa thuộc nhóm nào'}>
+                      {ungrouped.length === 0 ? (
+                        <Text className="text-sm text-muted-foreground">Chưa có ai.</Text>
+                      ) : (
+                        ungrouped.map((member) => (
+                          <MemberRow
+                            key={member.id}
+                            member={member}
+                            onRename={(id, name) => void run(() => renameTripMember(id, name))}
+                          />
+                        ))
+                      )}
+                    </SectionCard>
+                  ) : null}
 
-            <SectionCard
-              title="Thêm một người"
-              hint="Người này chưa cần cài app. Gửi mã mời sau để họ nhận đúng tên của mình.">
-              <View className="gap-3">
-                <TextField
-                  label="Tên"
-                  value={memberName}
-                  onChangeText={setMemberName}
-                  placeholder="Nguyễn Văn A"
-                  autoCapitalize="words"
-                />
-                <Button
-                  label="Thêm"
-                  variant="secondary"
-                  disabled={memberName.trim() === '' || busy || !tripId}
-                  onPress={() =>
-                    void run(async () => {
-                      await addTripMember(tripId!, memberName);
-                      setMemberName('');
-                    })
-                  }
-                />
-              </View>
-            </SectionCard>
+                  <SectionCard
+                    title="Thêm một người"
+                    hint="Người này chưa cần cài app. Gửi mã mời sau để họ nhận đúng tên của mình. Thành viên đã thêm chỉ đổi được tên, không xoá được — vì họ có thể đang gắn với khoản chi.">
+                    <View className="gap-3">
+                      <TextField
+                        label="Tên"
+                        value={memberName}
+                        onChangeText={setMemberName}
+                        placeholder="Nguyễn Văn A"
+                        autoCapitalize="words"
+                      />
+                      <Button
+                        label="Thêm"
+                        variant="secondary"
+                        disabled={memberName.trim() === '' || busy || !tripId}
+                        onPress={() =>
+                          void run(async () => {
+                            await addTripMember(tripId!, memberName);
+                            setMemberName('');
+                          })
+                        }
+                      />
+                    </View>
+                  </SectionCard>
 
-            <SectionCard
-              title="Tạo nhóm"
-              hint="Khai sẵn số người là có ngay từng ấy chỗ trống để đặt tên.">
-              <View className="gap-3">
-                <TextField
-                  label="Tên nhóm"
-                  value={groupName}
-                  onChangeText={setGroupName}
-                  placeholder="Xe 1"
-                  autoCapitalize="sentences"
-                />
-                <TextField
-                  label="Số người"
-                  value={groupSize}
-                  onChangeText={setGroupSize}
-                  keyboardType="number-pad"
-                  inputMode="numeric"
-                  error={sizeValid ? null : 'Nhập số nguyên từ 0 tới 100.'}
-                />
-                <Button
-                  label="Tạo nhóm"
-                  variant="secondary"
-                  disabled={groupName.trim() === '' || !sizeValid || busy || !tripId}
-                  onPress={() =>
-                    void run(async () => {
-                      await createTripGroup(tripId!, groupName, size);
-                      setGroupName('');
-                    })
-                  }
-                />
-              </View>
-            </SectionCard>
-          </>
-        ) : null}
+                  <SectionCard
+                    title="Tạo nhóm"
+                    hint="Khai sẵn số người là có ngay từng ấy chỗ trống để đặt tên.">
+                    <View className="gap-3">
+                      <TextField
+                        label="Tên nhóm"
+                        value={groupName}
+                        onChangeText={setGroupName}
+                        placeholder="Xe 1"
+                        autoCapitalize="sentences"
+                      />
+                      <TextField
+                        label="Số người"
+                        value={groupSize}
+                        onChangeText={setGroupSize}
+                        keyboardType="number-pad"
+                        inputMode="numeric"
+                        error={sizeValid ? null : 'Nhập số nguyên từ 0 tới 100.'}
+                      />
+                      <Button
+                        label="Tạo nhóm"
+                        variant="secondary"
+                        disabled={groupName.trim() === '' || !sizeValid || busy || !tripId}
+                        onPress={() =>
+                          void run(async () => {
+                            await createTripGroup(tripId!, groupName, size);
+                            setGroupName('');
+                          })
+                        }
+                      />
+                    </View>
+                  </SectionCard>
+                </>
+              ) : null}
+            </>
+          }
+          data={[]}
+          renderItem={() => null}
+        />
       </Screen>
     </>
   );

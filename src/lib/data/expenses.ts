@@ -234,7 +234,10 @@ export async function recordSettlement(input: RecordSettlementInput): Promise<vo
     throw new DataError('Số tiền tất toán phải lớn hơn 0.');
   }
 
-  const { data } = await supabase.auth.getUser();
+  const { data, error } = await supabase.auth.getUser();
+  if (error) {
+    throw new DataError(`Lỗi xác thực: ${error.message}`);
+  }
   const userId = data.user?.id;
   if (!userId) {
     throw new DataError('Bạn cần đăng nhập để ghi nhận tất toán.');

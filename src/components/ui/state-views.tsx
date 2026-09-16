@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react';
 import { ActivityIndicator, Text, View } from 'react-native';
 
 import { Button } from './button';
@@ -48,6 +49,30 @@ export function EmptyView({ title, hint, actionLabel, onAction }: EmptyViewProps
           <Button label={actionLabel} onPress={onAction} />
         </View>
       ) : null}
+    </View>
+  );
+}
+
+interface NoticeViewProps {
+  readonly message: string;
+  /** success: việc đã xong (viền xanh). info: hướng dẫn bước tiếp theo. */
+  readonly tone?: 'success' | 'info';
+  readonly children?: ReactNode;
+}
+
+/** Thông báo không phải lỗi — cùng khuôn với ErrorView để các màn trông đồng bộ. */
+export function NoticeView({ message, tone = 'info', children }: NoticeViewProps) {
+  return (
+    <View
+      accessibilityLiveRegion="polite"
+      className={`gap-3 rounded-2xl border bg-card p-4 ${
+        tone === 'success' ? 'border-positive' : 'border-border'
+      }`}>
+      <Text
+        className={`text-sm ${tone === 'success' ? 'font-semibold text-positive' : 'text-foreground'}`}>
+        {message}
+      </Text>
+      {children}
     </View>
   );
 }

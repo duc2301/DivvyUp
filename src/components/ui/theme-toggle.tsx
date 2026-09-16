@@ -1,6 +1,8 @@
-import { Pressable, Text } from 'react-native';
+import { Pressable } from 'react-native';
 
 import { useTheme } from '@/features/theme/theme-context';
+
+import { Moon, Sun } from './icons';
 
 /**
  * Nút đảo sáng/tối.
@@ -12,6 +14,7 @@ import { useTheme } from '@/features/theme/theme-context';
 export function ThemeToggle() {
   const { effective, toggle } = useTheme();
   const goingDark = effective === 'light';
+  const Icon = goingDark ? Moon : Sun;
 
   return (
     <Pressable
@@ -19,8 +22,8 @@ export function ThemeToggle() {
       accessibilityState={{ checked: effective === 'dark' }}
       accessibilityLabel={goingDark ? 'Chuyển sang chế độ tối' : 'Chuyển sang chế độ sáng'}
       onPress={toggle}
-      className="h-11 w-11 items-center justify-center rounded-full bg-muted">
-      <Text className="text-base">{goingDark ? '🌙' : '☀️'}</Text>
+      className="h-11 w-11 items-center justify-center rounded-full active:opacity-60">
+      <Icon size={22} className="text-foreground" />
     </Pressable>
   );
 }

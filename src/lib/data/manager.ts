@@ -184,13 +184,9 @@ export async function moveMemberToGroup(memberId: string, groupId: string | null
   await remoteTrips.moveMemberToGroup(memberId, groupId);
 }
 
-export async function removeTripMember(memberId: string): Promise<void> {
-  if (await isGuestMode()) {
-    await localStore.deleteMember(memberId);
-    return;
-  }
-  await remoteTrips.removeTripMember(memberId);
-}
+// KHÔNG có removeTripMember. Thành viên chỉ được thêm và đổi tên: xoá một người
+// vẫn gắn với khoản chi cũ làm tổng số dư của cả chuyến lệch khỏi 0. DB cũng
+// chặn việc này bằng trigger guard_trip_member_changes (migration 09).
 
 export async function previewTripByCode(joinCode: string): Promise<TripPreview> {
   if (await isGuestMode()) return guestUnsupported('tham gia bằng mã mời');

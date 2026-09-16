@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { Money, SplitLine } from '@/lib/money';
 import type { SplitModeDb } from '@/lib/supabase/database.types';
-import type { TripMember, TripSummary } from '@/lib/data/trips';
+import type { TripCoverImage, TripMember, TripSummary } from '@/lib/data/trips';
 
 /**
  * Kho lưu trữ cục bộ cho chế độ khách.
@@ -56,6 +56,45 @@ export function localId(): string {
   });
 }
 
+/**
+ * Đọc một chuyến đi đã lưu, bù các trường mà bản app CŨ chưa có.
+ *
+ * Dữ liệu khách nằm trên máy người dùng và sống qua nhiều lần cập nhật app.
+ * Chuyến tạo trước khi có tính năng ảnh bìa không có trường `cover` — đọc thẳng
+ * thì `cover.images` văng lỗi và app trắng màn ngay khi mở. Không có migration
+ * nào chạy được trên máy người dùng, nên phải bù ở chỗ đọc.
+ */
+function normalizeTrip(trip: Partial<StoredTrip>): StoredTrip | null {
+  if (typeof trip.id !== 'string' || typeof trip.name !== 'string') return null;
+
+  // Bản cũ hơn nữa lưu MỘT ảnh ở `coverImage` — giữ lại thành bộ ảnh một tấm.
+  const legacyCover = (trip as { coverImage?: TripCoverImage | null }).coverImage;
+  const images = Array.isArray(trip.cover?.images)
+    ? trip.cover.images
+    : legacyCover && typeof legacyCover.url === 'string'
+      ? [legacyCover]
+      : [];
+  const rawIndex = trip.cover?.index;
+  const index =
+    typeof rawIndex === 'number' && Number.isInteger(rawIndex) && rawIndex >= 0 && rawIndex < images.length
+      ? rawIndex
+      : 0;
+  const now = new Date(0).toISOString();
+
+  return {
+    id: trip.id,
+    name: trip.name,
+    currency: trip.currency ?? 'VND',
+    startDate: trip.startDate ?? null,
+    endDate: trip.endDate ?? null,
+    joinCode: trip.joinCode ?? '',
+    place: trip.place ?? null,
+    cover: { images, index },
+    createdAt: trip.createdAt ?? now,
+    updatedAt: trip.updatedAt ?? now,
+  };
+}
+
 export class LocalStore {
   private readonly keys = {
     trips: 'divvyup_local_trips',
@@ -81,7 +120,11 @@ export class LocalStore {
 
   // --- Trips ---
   async listTrips(): Promise<StoredTrip[]> {
-    return this.get<StoredTrip>(this.keys.trips);
+    const raw = await this.get<Partial<StoredTrip>>(this.keys.trips);
+    return raw.flatMap((trip) => {
+      const normalized = normalizeTrip(trip);
+      return normalized ? [normalized] : [];
+    });
   }
 
   async saveTrip(trip: StoredTrip): Promise<void> {
@@ -118,14 +161,6 @@ export class LocalStore {
     if (index > -1) members[index] = member;
     else members.push(member);
     await this.set(this.keys.members, members);
-  }
-
-  async deleteMember(id: string): Promise<void> {
-    const members = await this.listAllMembers();
-    await this.set(
-      this.keys.members,
-      members.filter((item) => item.id !== id),
-    );
   }
 
   // --- Expenses ---

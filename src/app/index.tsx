@@ -1,15 +1,14 @@
 import { Image } from 'expo-image';
 import { useFocusEffect, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef } from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
 
-import { AppHeader, HeaderAction } from '@/components/ui/app-header';
-import { ThemeToggle } from '@/components/ui/theme-toggle';
-import { Button } from '@/components/ui/button';
+import { AppHeader } from '@/components/ui/app-header';
+import { IconButton } from '@/components/ui/icon-button';
+import { KeyRound, Plus } from '@/components/ui/icons';
 import { Screen } from '@/components/ui/screen';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
-import { signOut } from '@/features/auth/auth-actions';
-import { useSessionContext } from '@/features/auth/session-context';
+import { UserMenu } from '@/components/ui/user-menu';
 import { listTrips } from '@/lib/data/manager';
 import { currentCover } from '@/lib/data/trips';
 import { useAsync } from '@/lib/data/use-async';
@@ -31,13 +30,17 @@ function tripDateLabel(startDate: string | null, endDate: string | null): string
 
 export default function TripListScreen() {
   const router = useRouter();
-  const { isGuest, setGuestMode } = useSessionContext();
-  const [signingOut, setSigningOut] = useState(false);
   const { data: trips, error, loading, reload } = useAsync(() => listTrips(), []);
 
-  // Tải lại mỗi khi quay về màn này, để chuyến đi vừa tạo xuất hiện ngay.
+  // Tải lại mỗi khi quay về màn này, để chuyến đi vừa tạo xuất hiện ngay. Bỏ
+  // qua lần focus đầu: useAsync đã tự tải lúc mount, gọi thêm là tải hai lần.
+  const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
       reload();
     }, [reload]),
   );
@@ -47,26 +50,25 @@ export default function TripListScreen() {
       <Screen
         header={
           <AppHeader
+            layout="inline"
             title="My trips"
             subtitle="Mỗi chuyến một sổ chi tiêu riêng"
             right={
-              <View className="flex-row items-center gap-2">
-                <ThemeToggle />
-                {/* Khách không có phiên để đăng xuất — nút phải mời họ đăng
-                    nhập, còn không thì bấm vào sẽ chẳng có gì xảy ra. */}
-                <HeaderAction
-                  label={isGuest ? 'Đăng nhập' : 'Thoát'}
-                  accessibilityLabel={isGuest ? 'Đăng nhập để đồng bộ' : 'Đăng xuất'}
-                  disabled={signingOut}
-                  onPress={() => {
-                    if (isGuest) {
-                      void setGuestMode(false);
-                      return;
-                    }
-                    setSigningOut(true);
-                    void signOut().finally(() => setSigningOut(false));
-                  }}
+              // Nằm cùng hàng tiêu đề thay vì cuối danh sách: có nhiều chuyến
+              // đi thì nút ở cuối bị đẩy khuất, phải cuộn hết mới tạo được.
+              <View className="flex-row items-center gap-1">
+                <IconButton
+                  icon={KeyRound}
+                  label="Tham gia bằng mã mời"
+                  onPress={() => router.push('/join')}
                 />
+                <IconButton
+                  icon={Plus}
+                  label="Tạo chuyến đi"
+                  variant="primary"
+                  onPress={() => router.push('/trip-new')}
+                />
+                <UserMenu />
               </View>
             }
           />
@@ -77,7 +79,7 @@ export default function TripListScreen() {
         {trips !== null && trips.length === 0 && !error ? (
           <EmptyView
             title="Chưa có chuyến đi nào"
-            hint="Tạo chuyến đầu tiên, thiết lập nhóm và số người, rồi bắt đầu ghi khoản chi."
+            hint="Bấm ＋ để tạo chuyến đầu tiên, hoặc 🔑 để tham gia chuyến của bạn bè bằng mã mời."
             actionLabel="Tạo chuyến đi"
             onAction={() => router.push('/trip-new')}
           />
@@ -101,9 +103,6 @@ export default function TripListScreen() {
                     <View className="flex-row items-center justify-between gap-3">
                       <Text className="min-w-0 flex-1 font-display text-2xl text-foreground">
                         {trip.name}
-                      </Text>
-                      <Text className="rounded-lg bg-muted px-2 py-1 text-xs font-semibold text-muted-foreground">
-                        {trip.currency}
                       </Text>
                     </View>
                     <Text className="mt-1 text-sm text-muted-foreground">
@@ -142,16 +141,6 @@ export default function TripListScreen() {
             })()}
           </Pressable>
         ))}
-
-        {trips !== null && trips.length > 0 ? (
-          <Button label="＋ Tạo chuyến đi" onPress={() => router.push('/trip-new')} />
-        ) : null}
-
-        <Button
-          label="Tham gia bằng mã mời"
-          variant="ghost"
-          onPress={() => router.push('/join')}
-        />
       </Screen>
     </>
   );

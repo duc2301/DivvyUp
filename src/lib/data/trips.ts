@@ -379,16 +379,6 @@ export async function moveMemberToGroup(
   unwrapVoid(await supabase.from('trip_members').update({ group_id: groupId }).eq('id', memberId));
 }
 
-/** Xoá mềm: lịch sử công nợ của người này vẫn giữ nguyên. */
-export async function removeTripMember(memberId: string): Promise<void> {
-  unwrapVoid(
-    await supabase
-      .from('trip_members')
-      .update({ removed_at: new Date().toISOString() })
-      .eq('id', memberId),
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Mời sau — người được mời chưa phải thành viên nên RLS chặn họ đọc mọi thứ.
 // Hai hàm dưới đi qua RPC SECURITY DEFINER, chỉ mở khi có mã mời đúng.

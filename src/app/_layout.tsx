@@ -1,6 +1,6 @@
 import '@/global.css';
 
-import { Poppins_600SemiBold, Poppins_700Bold, useFonts } from '@expo-google-fonts/poppins';
+import { BeVietnamPro_600SemiBold, useFonts } from '@expo-google-fonts/be-vietnam-pro';
 import {
   DarkTheme,
   DefaultTheme,
@@ -28,6 +28,16 @@ SplashScreen.preventAutoHideAsync();
 const LIGHT_BACKGROUND = '#FFFFFF';
 const DARK_BACKGROUND = '#0F172A';
 
+/** Màn mở được khi chưa đăng nhập. */
+const PUBLIC_SCREENS = new Set(['sign-in', 'forgot-password', 'reset-password']);
+
+/**
+ * Màn chỉ dành cho người CHƯA đăng nhập — đã vào app rồi thì đẩy về trang chủ.
+ * reset-password cố ý KHÔNG nằm đây: link đặt lại mật khẩu tự tạo phiên đăng
+ * nhập, đẩy đi thì người dùng không bao giờ tới được ô nhập mật khẩu mới.
+ */
+const SIGNED_OUT_ONLY = new Set(['sign-in', 'forgot-password']);
+
 function AuthGate() {
   const { session, loading, isGuest } = useSessionContext();
   const segments = useSegments();
@@ -36,17 +46,17 @@ function AuthGate() {
   useEffect(() => {
     if (loading) return;
 
-    const onSignInScreen = segments[0] === 'sign-in';
+    const screen = segments[0] ?? '';
     const canUseApp = session !== null || isGuest;
 
-    if (!canUseApp && !onSignInScreen) {
+    if (!canUseApp && !PUBLIC_SCREENS.has(screen)) {
       router.replace('/sign-in');
-    } else if (canUseApp && onSignInScreen) {
+    } else if (canUseApp && SIGNED_OUT_ONLY.has(screen)) {
       // isGuest PHẢI nằm trong điều kiện này. Thiếu nó, bấm "tiếp tục với tư
       // cách khách" chỉ bật được cờ mà không bao giờ rời khỏi màn đăng nhập.
       router.replace('/');
     }
-  }, [session, loading, isGuest, segments, router]);
+  }, [session, loading, isGuest, JSON.stringify(segments), router]);
 
   // Mọi màn hình tự vẽ header bằng AppHeader để giữ màu trong một bảng token
   // duy nhất, nên tắt header mặc định của Stack.
@@ -82,7 +92,7 @@ function ThemedApp() {
 }
 
 export default function RootLayout() {
-  const [fontsLoaded, fontError] = useFonts({ Poppins_600SemiBold, Poppins_700Bold });
+  const [fontsLoaded, fontError] = useFonts({ BeVietnamPro_600SemiBold });
 
   // Tải font lỗi thì vẫn cho app chạy với font hệ thống — mất kiểu chữ ở tiêu
   // đề còn hơn kẹt ở màn hình trắng vĩnh viễn.
