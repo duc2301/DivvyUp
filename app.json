@@ -19,7 +19,8 @@
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
       "predictiveBackGestureEnabled": false,
-      "package": "com.ducccc.DivvyUp"
+      "package": "com.ducccc.DivvyUp",
+      "softwareKeyboardLayoutMode": "resize"
     },
     "web": {
       "output": "static",

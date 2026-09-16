@@ -1,6 +1,6 @@
 import { Image } from 'expo-image';
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { AppHeader } from '@/components/ui/app-header';
@@ -13,7 +13,7 @@ import { getTrip, updateTripPlace } from '@/lib/data/manager';
 import type { PlacePhoto, PlaceResult } from '@/lib/data/places';
 import { fetchPlacePhotos, searchPlaces } from '@/lib/data/places';
 import { describeError, useAsync } from '@/lib/data/use-async';
-import type { TripCoverImage, TripPlace } from '@/lib/data/trips';
+import type { TripCoverGallery, TripPlace } from '@/lib/data/trips';
 
 function firstParam(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
@@ -27,6 +27,9 @@ export default function TripPlaceScreen() {
   const [query, setQuery] = useState('');
   const [results, setResults] = useState<PlaceResult[]>([]);
   const [searching, setSearching] = useState(false);
+  // Phân biệt "chưa tìm lần nào" với "đã tìm và không có kết quả" — thiếu nó
+  // thì gõ một cái tên không có thật sẽ không hiện gì cả, màn hình như bị treo.
+  const [searched, setSearched] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
 
   const [place, setPlace] = useState<PlaceResult | null>(null);
@@ -34,6 +37,9 @@ export default function TripPlaceScreen() {
   const [loadingPhotos, setLoadingPhotos] = useState(false);
   const [photoError, setPhotoError] = useState<string | null>(null);
   const [selectedPhoto, setSelectedPhoto] = useState<PlacePhoto | null>(null);
+
+  // Số thứ tự lượt tải ảnh, để bỏ qua kết quả của lượt đã bị thay thế.
+  const photoRequestId = useRef(0);
 
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
@@ -46,10 +52,20 @@ export default function TripPlaceScreen() {
   // Chờ 400ms sau khi ngừng gõ mới tìm. Gọi theo từng ký tự vừa tốn hạn mức
   // API vừa làm danh sách nhấp nháy liên tục.
   useEffect(() => {
+    // Đã chọn xong thì KHÔNG tìm lại. choosePlace đặt query = tên địa điểm,
+    // mà query là dependency của effect này — thiếu chốt chặn thì 400ms sau
+    // danh sách kết quả tự bật lại, đẩy khối ảnh bìa tụt xuống đúng lúc ngón
+    // tay đang chạm, và tốn thêm một lượt gọi Mapbox hoàn toàn thừa.
+    if (place !== null) return;
+
     const trimmed = query.trim();
     if (trimmed.length < 2) {
       setResults([]);
       setSearchError(null);
+      // Phải tắt cả cờ này: thiếu nó thì gõ "đà" rồi xoá còn "đ" sẽ để dòng
+      // "Đang tìm…" kẹt lại vĩnh viễn.
+      setSearching(false);
+      setSearched(false);
       return;
     }
 
@@ -61,6 +77,7 @@ export default function TripPlaceScreen() {
         .then((found) => {
           if (cancelled) return;
           setResults(found);
+          setSearched(true);
         })
         .catch((caught: unknown) => {
           if (cancelled) return;
@@ -76,7 +93,7 @@ export default function TripPlaceScreen() {
       cancelled = true;
       clearTimeout(timer);
     };
-  }, [query]);
+  }, [query, place]);
 
   const choosePlace = (chosen: PlaceResult): void => {
     setPlace(chosen);
@@ -87,12 +104,31 @@ export default function TripPlaceScreen() {
     setPhotoError(null);
     setLoadingPhotos(true);
 
-    // Tìm ảnh theo tên địa điểm kèm quốc gia: "Đà Lạt" một mình dễ ra ảnh lạc đề.
+    // Đánh dấu lượt tải này. Chọn "Hội An" (mạng chậm) rồi đổi ý chọn "Đà Lạt"
+    // (trả nhanh): không có chốt này thì ảnh Hội An về sau sẽ đè lên lưới Đà Lạt
+    // trong khi tiêu đề vẫn là Đà Lạt — người dùng chọn một tấm rồi lưu, và
+    // chuyến Đà Lạt mang ảnh bìa Hội An.
+    photoRequestId.current += 1;
+    const requestId = photoRequestId.current;
+
+    // Tìm theo tên kèm quốc gia để tránh trùng tên với nơi khác trên thế giới;
+    // nếu không ra ảnh nào thì Edge Function tự lùi về riêng tên địa điểm.
     const term = chosen.country ? `${chosen.name} ${chosen.country}` : chosen.name;
-    fetchPlacePhotos(term, { limit: 12 })
-      .then(setPhotos)
-      .catch((caught: unknown) => setPhotoError(describeError(caught)))
-      .finally(() => setLoadingPhotos(false));
+    fetchPlacePhotos(term, { limit: 12, fallback: chosen.name })
+      .then((found) => {
+        if (photoRequestId.current !== requestId) return;
+        setPhotos(found);
+      })
+      .catch((caught: unknown) => {
+        if (photoRequestId.current !== requestId) return;
+        setPhotoError(describeError(caught));
+      })
+      .finally(() => {
+        // Lượt cũ KHÔNG được tắt spinner của lượt mới, nếu không lưới rỗng sẽ
+        // trông như "địa điểm này không có ảnh".
+        if (photoRequestId.current !== requestId) return;
+        setLoadingPhotos(false);
+      });
   };
 
   const save = async (): Promise<void> => {
@@ -112,14 +148,20 @@ export default function TripPlaceScreen() {
           }
         : null;
 
-      const nextCover: TripCoverImage | null = selectedPhoto
-        ? {
-            url: selectedPhoto.url,
-            credit: selectedPhoto.credit,
-            link: selectedPhoto.link,
-            provider: selectedPhoto.provider,
-          }
-        : null;
+      // Lưu CẢ danh sách ảnh tìm được, không chỉ tấm được chọn: người dùng sẽ
+      // lướt qua lại trên màn chuyến đi. Tấm đang chọn trở thành ảnh hiện tại.
+      const images = photos.map((photo) => ({
+        url: photo.url,
+        thumbUrl: photo.thumbUrl,
+        credit: photo.credit,
+        link: photo.link,
+        provider: photo.provider,
+      }));
+      const chosenIndex = selectedPhoto
+        ? Math.max(photos.findIndex((photo) => photo.id === selectedPhoto.id), 0)
+        : 0;
+
+      const nextCover: TripCoverGallery = { images, index: chosenIndex };
 
       await updateTripPlace(tripId, nextPlace, nextCover);
       router.back();
@@ -135,7 +177,7 @@ export default function TripPlaceScreen() {
     setSaving(true);
     setSaveError(null);
     try {
-      await updateTripPlace(tripId, null, null);
+      await updateTripPlace(tripId, null, { images: [], index: 0 });
       router.back();
     } catch (caught) {
       setSaveError(describeError(caught));
@@ -169,6 +211,14 @@ export default function TripPlaceScreen() {
 
       {searchError ? <ErrorView message={searchError} /> : null}
 
+      {searched && results.length === 0 && place === null && !searching && !searchError ? (
+        <SectionCard title="Kết quả">
+          <Text className="text-sm text-muted-foreground">
+            Không tìm thấy địa điểm nào khớp. Thử tên khác, hoặc bỏ dấu.
+          </Text>
+        </SectionCard>
+      ) : null}
+
       {results.length > 0 ? (
         <SectionCard title="Kết quả">
           {results.map((item) => (
@@ -194,8 +244,8 @@ export default function TripPlaceScreen() {
           title="Ảnh bìa"
           hint={
             selectedPhoto
-              ? `Nguồn: ${selectedPhoto.credit} · ${selectedPhoto.provider}`
-              : 'Chạm để chọn một ảnh. Có thể bỏ qua.'
+              ? `Ảnh mở đầu: ${selectedPhoto.credit}. Cả ${photos.length} ảnh đều được lưu để lướt.`
+              : `Cả ${photos.length} ảnh sẽ được lưu. Chạm để chọn ảnh hiện ra đầu tiên.`
           }>
           {loadingPhotos ? <LoadingView label="Đang tải ảnh…" /> : null}
           {photoError ? <ErrorView message={photoError} /> : null}

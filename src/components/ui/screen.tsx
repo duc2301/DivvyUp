@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react';
-import { ScrollView, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, ScrollView, View } from 'react-native';
 import type { Edge } from 'react-native-safe-area-context';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -23,12 +23,24 @@ export function Screen({
       <SafeAreaView edges={edges} className="flex-1">
         {header}
         {scroll ? (
-          <ScrollView
+          <KeyboardAvoidingView
             className="flex-1"
-            contentContainerClassName="gap-4 px-4 pb-16 pt-2"
-            keyboardShouldPersistTaps="handled">
-            {children}
-          </ScrollView>
+            // Android bật edge-to-edge từ Expo SDK 54, cửa sổ KHÔNG còn tự co
+            // lại khi bàn phím hiện lên — nên phải tự đẩy nội dung. iOS thì
+            // 'padding' là cách chuẩn.
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+            <ScrollView
+              className="flex-1"
+              // Chừa thêm chỗ dưới đáy để ô nhập cuối cùng không dính sát bàn phím.
+              contentContainerClassName="gap-4 px-4 pb-24 pt-2"
+              keyboardShouldPersistTaps="handled"
+              // Vuốt xuống là đóng bàn phím, không cần bấm nút riêng.
+              keyboardDismissMode="interactive"
+              // iOS tự chừa đúng chiều cao bàn phím và cuộn tới ô đang gõ.
+              automaticallyAdjustKeyboardInsets>
+              {children}
+            </ScrollView>
+          </KeyboardAvoidingView>
         ) : (
           <View className="flex-1 px-4 pt-2">{children}</View>
         )}

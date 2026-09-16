@@ -1,5 +1,5 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -7,7 +7,13 @@ import { Button } from '@/components/ui/button';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
 import { TripHero } from '@/components/ui/trip-hero';
-import { getTrip, getTripBalances, listExpenses, listTripMembers } from '@/lib/data/manager';
+import {
+  getTrip,
+  getTripBalances,
+  listExpenses,
+  listTripMembers,
+  updateCoverIndex,
+} from '@/lib/data/manager';
 import { useAsync } from '@/lib/data/use-async';
 import { formatRelativeDateTime } from '@/lib/datetime';
 import { formatMoney, money, simplifyDebts, sumMoney } from '@/lib/money';
@@ -54,8 +60,16 @@ export default function TripScreen() {
     return { trip, members, expenses, balances };
   }, [tripId]);
 
+  // Bỏ qua lần focus ĐẦU TIÊN: useAsync đã tự chạy trong useEffect của nó rồi.
+  // Không có chốt này thì mỗi lần mở một chuyến đi, app bắn hai bộ 4 truy vấn
+  // song song và vứt bộ đầu — gấp đôi thời gian chờ trên mạng yếu.
+  const firstFocus = useRef(true);
   useFocusEffect(
     useCallback(() => {
+      if (firstFocus.current) {
+        firstFocus.current = false;
+        return;
+      }
       reload();
     }, [reload]),
   );
@@ -89,10 +103,12 @@ export default function TripScreen() {
         contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
         keyboardShouldPersistTaps="handled">
         <TripHero
-          imageUrl={data?.trip.coverImage?.url ?? null}
-          imageCredit={data?.trip.coverImage?.credit ?? null}
-          imageLink={data?.trip.coverImage?.link ?? null}
+          images={data?.trip.cover.images ?? []}
+          initialIndex={data?.trip.cover.index ?? 0}
           onEditPlace={goToPlace}
+          onChangeIndex={(next) => {
+            if (tripId) void updateCoverIndex(tripId, next).catch(() => undefined);
+          }}
         />
 
         {/* Thẻ đè lên ảnh — chi tiết tạo nên bố cục trong thiết kế mẫu. */}
@@ -107,13 +123,27 @@ export default function TripScreen() {
                   <Text className="font-display text-3xl leading-tight text-foreground">
                     {data.trip.name}
                   </Text>
-                  <Text className="mt-1 text-sm text-muted-foreground">
-                    {data.trip.place
-                      ? `📍 ${data.trip.place.name}${
-                          data.trip.place.country ? `, ${data.trip.place.country}` : ''
-                        }`
-                      : 'Chưa chọn địa điểm'}
-                  </Text>
+                  {/* Dòng địa điểm chính là chỗ đổi địa điểm — thay cho nút
+                      nổi trên ảnh. Đỡ một nút che mất ảnh bìa, và chạm vào
+                      đúng thứ muốn sửa là hành vi tự nhiên hơn. */}
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel={
+                      data.trip.place ? 'Đổi địa điểm chuyến đi' : 'Chọn địa điểm chuyến đi'
+                    }
+                    onPress={goToPlace}
+                    className="mt-1 flex-row items-center self-start">
+                    <Text className="text-sm text-muted-foreground">
+                      {data.trip.place
+                        ? `📍 ${data.trip.place.name}${
+                            data.trip.place.country ? `, ${data.trip.place.country}` : ''
+                          }`
+                        : 'Chưa chọn địa điểm'}
+                    </Text>
+                    <Text className="pl-1 text-sm font-medium text-accent-strong">
+                      {data.trip.place ? 'Đổi' : 'Chọn'} ›
+                    </Text>
+                  </Pressable>
                 </View>
 
                 <View className="items-end">
@@ -240,7 +270,7 @@ export default function TripScreen() {
                     {transfers.length > 0 ? (
                       <View className="rounded-2xl border border-border bg-card p-4">
                         <Text className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-                          Ai trả ai
+                          Chi tiết người trả                      
                         </Text>
                         {transfers.map((transfer, index) => (
                           <View

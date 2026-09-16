@@ -16,6 +16,15 @@
  * JavaScript sẽ mất chính xác mà không báo lỗi.
  */
 
+/** Một phần tử trong cột jsonb trips.cover_images. */
+export interface CoverImageRow {
+  url: string;
+  thumbUrl: string;
+  credit: string | null;
+  link: string | null;
+  provider: string | null;
+}
+
 export type TripRole = 'owner' | 'member';
 export type SplitModeDb = 'equal' | 'exact';
 
@@ -58,10 +67,8 @@ export interface Database {
           longitude: number | null;
           place_provider: string | null;
           place_external_id: string | null;
-          cover_image_url: string | null;
-          cover_image_credit: string | null;
-          cover_image_link: string | null;
-          cover_image_provider: string | null;
+          cover_images: CoverImageRow[];
+          cover_image_index: number;
         };
         Insert: {
           id?: string;
@@ -77,10 +84,8 @@ export interface Database {
           longitude?: number | null;
           place_provider?: string | null;
           place_external_id?: string | null;
-          cover_image_url?: string | null;
-          cover_image_credit?: string | null;
-          cover_image_link?: string | null;
-          cover_image_provider?: string | null;
+          cover_images?: CoverImageRow[];
+          cover_image_index?: number;
         };
         Update: {
           name?: string;
@@ -94,10 +99,8 @@ export interface Database {
           longitude?: number | null;
           place_provider?: string | null;
           place_external_id?: string | null;
-          cover_image_url?: string | null;
-          cover_image_credit?: string | null;
-          cover_image_link?: string | null;
-          cover_image_provider?: string | null;
+          cover_images?: CoverImageRow[];
+          cover_image_index?: number;
         };
         Relationships: [
           {

@@ -25,7 +25,7 @@ import type {
 import * as remoteExpenses from './expenses';
 import type {
   CreateTripInput,
-  TripCoverImage,
+  TripCoverGallery,
   TripGroup,
   TripMember,
   TripPlace,
@@ -79,7 +79,7 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
       // không ai tham gia bằng mã được. Màn hình ẩn thẻ "Mã mời" khi rỗng.
       joinCode: '',
       place: input.place ?? null,
-      coverImage: input.coverImage ?? null,
+      cover: input.cover ?? { images: [], index: 0 },
       createdAt: now,
       updatedAt: now,
     };
@@ -92,15 +92,30 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
 export async function updateTripPlace(
   tripId: string,
   place: TripPlace | null,
-  coverImage: TripCoverImage | null,
+  cover: TripCoverGallery | null,
 ): Promise<void> {
+  const next = cover ?? { images: [], index: 0 };
   if (await isGuestMode()) {
     const trip = (await localStore.listTrips()).find((item) => item.id === tripId);
     if (!trip) throw new DataError('Không tìm thấy chuyến đi trong dữ liệu cục bộ.');
-    await localStore.saveTrip({ ...trip, place, coverImage, updatedAt: new Date().toISOString() });
+    await localStore.saveTrip({ ...trip, place, cover: next, updatedAt: new Date().toISOString() });
     return;
   }
-  await remoteTrips.updateTripPlace(tripId, place, coverImage);
+  await remoteTrips.updateTripPlace(tripId, place, next);
+}
+
+/** Đổi riêng ảnh đang hiển thị khi người dùng lướt carousel. */
+export async function updateCoverIndex(tripId: string, index: number): Promise<void> {
+  if (await isGuestMode()) {
+    const trip = (await localStore.listTrips()).find((item) => item.id === tripId);
+    if (!trip) return;
+    const clamped = trip.cover.images.length === 0
+      ? 0
+      : Math.min(Math.max(index, 0), trip.cover.images.length - 1);
+    await localStore.saveTrip({ ...trip, cover: { ...trip.cover, index: clamped } });
+    return;
+  }
+  await remoteTrips.updateCoverIndex(tripId, index);
 }
 
 export async function listTripGroups(tripId: string): Promise<TripGroup[]> {

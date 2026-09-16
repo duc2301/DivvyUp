@@ -10,8 +10,7 @@ import { SectionCard } from '@/components/ui/section-card';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { ErrorView, LoadingView } from '@/components/ui/state-views';
 import { TextField } from '@/components/ui/text-field';
-import { createExpense, getExpenseDetail, updateExpense, voidExpense } from '@/lib/data/manager';
-import { getTrip, listTripMembers } from '@/lib/data/manager';
+import { createExpense, getExpenseDetail, getTrip, listTripMembers, updateExpense, voidExpense } from '@/lib/data/manager';
 import { describeError, useAsync } from '@/lib/data/use-async';
 import { formatDateTime, parseDateTime } from '@/lib/datetime';
 import type { CurrencyCode, Money, SplitLine } from '@/lib/money';
@@ -253,7 +252,7 @@ export default function ExpenseFormScreen() {
               <SegmentedControl
                 options={[
                   { value: 'equal' as const, label: 'Chia đều' },
-                  { value: 'exact' as const, label: 'Gõ từng người' },
+                  { value: 'exact' as const, label: 'tính riêng từng người' },
                 ]}
                 value={mode}
                 onChange={setMode}

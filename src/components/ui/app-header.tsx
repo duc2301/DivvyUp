@@ -28,8 +28,10 @@ export function AppHeader({ title, subtitle, showBack = false, right }: AppHeade
             accessibilityRole="button"
             accessibilityLabel="Quay lại"
             onPress={() => router.back()}
-            className="h-11 w-11 items-center justify-center rounded-full bg-card">
-            <Text className="text-lg text-foreground">←</Text>
+            // Không nền, không viền: nút quay lại là thao tác phụ, khoanh tròn
+            // nó lên thành ra hút mắt hơn cả tiêu đề. Vùng chạm vẫn giữ 44pt.
+            className="h-11 w-11 items-center justify-start">
+            <Text className="text-2xl leading-none text-foreground">←</Text>
           </Pressable>
         ) : (
           <View className="h-11 w-11" />

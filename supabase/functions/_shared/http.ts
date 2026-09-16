@@ -30,16 +30,24 @@ export function handlePreflight(req: Request): Response | null {
 }
 
 /**
- * Chỉ cho người đã đăng nhập gọi.
+ * Chỉ cho client của app gọi, không để proxy thành cổng mở cho cả Internet.
  *
- * Supabase tự xác thực JWT trước khi hàm chạy (trừ khi deploy với
- * --no-verify-jwt), nhưng kiểm lại ở đây để nếu ai đó lỡ tắt cờ đó thì proxy
- * vẫn không thành cổng mở cho cả Internet dùng chùa hạn mức API.
+ * CHẤP NHẬN apikey HOẶC Authorization — không được đòi riêng Authorization.
+ * Lý do: với khoá kiểu mới `sb_publishable_...`, supabase-js chỉ gửi khoá ở
+ * header `apikey` và KHÔNG nhân đôi sang `Authorization` khi người dùng chưa
+ * đăng nhập. Khoá anon kiểu JWT cũ thì có gửi cả hai. Đòi riêng Authorization
+ * sẽ chặn sạch chế độ khách — vốn là một chế độ hợp lệ của app.
+ *
+ * Việc xác thực thật do nền tảng Supabase làm trước khi hàm này chạy: request
+ * không kèm khoá hợp lệ đã bị chặn từ vòng ngoài. Hàm này chỉ là lớp kiểm lại
+ * phòng khi ai đó deploy với --no-verify-jwt.
  */
-export function requireAuthHeader(req: Request): string | null {
-  const header = req.headers.get('Authorization');
-  if (!header || !header.toLowerCase().startsWith('bearer ')) return null;
-  return header;
+export function hasCallerCredential(req: Request): boolean {
+  const auth = req.headers.get('Authorization');
+  if (auth && auth.toLowerCase().startsWith('bearer ') && auth.length > 10) return true;
+
+  const apikey = req.headers.get('apikey');
+  return Boolean(apikey && apikey.length > 10);
 }
 
 /** fetch có hạn giờ, để một nhà cung cấp chậm không treo cả hàm. */

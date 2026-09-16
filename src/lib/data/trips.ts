@@ -29,9 +29,17 @@ export interface TripPlace {
 /** Ảnh bìa. credit và link là BẮT BUỘC hiển thị khi nguồn là Unsplash. */
 export interface TripCoverImage {
   readonly url: string;
+  readonly thumbUrl: string;
   readonly credit: string | null;
   readonly link: string | null;
   readonly provider: string | null;
+}
+
+/** Bộ ảnh bìa kèm ảnh đang được chọn. */
+export interface TripCoverGallery {
+  readonly images: readonly TripCoverImage[];
+  /** Vị trí ảnh đang hiển thị. Luôn hợp lệ nếu images không rỗng. */
+  readonly index: number;
 }
 
 export interface TripSummary {
@@ -41,9 +49,14 @@ export interface TripSummary {
   readonly startDate: string | null;
   readonly endDate: string | null;
   readonly joinCode: string;
-  /** Gom 11 cột phẳng ở DB thành hai object: màn hình chỉ cần hỏi "có hay không". */
+  /** Gom các cột phẳng ở DB thành object: màn hình chỉ cần hỏi "có hay không". */
   readonly place: TripPlace | null;
-  readonly coverImage: TripCoverImage | null;
+  readonly cover: TripCoverGallery;
+}
+
+/** Ảnh đang hiển thị, hoặc null nếu chuyến đi chưa có ảnh nào. */
+export function currentCover(cover: TripCoverGallery): TripCoverImage | null {
+  return cover.images[cover.index] ?? cover.images[0] ?? null;
 }
 
 export interface TripGroup {
@@ -87,7 +100,7 @@ async function requireUserId(): Promise<string> {
 // supabase-js đọc chuỗi select như một kiểu literal để suy ra hình dạng dòng
 // trả về; nối chuỗi lúc chạy thì nó mất kiểu và mọi thứ thành GenericStringError.
 // prettier-ignore
-const TRIP_COLUMNS = 'id, name, currency, start_date, end_date, join_code, place_name, place_address, place_country, latitude, longitude, place_provider, place_external_id, cover_image_url, cover_image_credit, cover_image_link, cover_image_provider';
+const TRIP_COLUMNS = 'id, name, currency, start_date, end_date, join_code, place_name, place_address, place_country, latitude, longitude, place_provider, place_external_id, cover_images, cover_image_index';
 
 type TripRow = Database['public']['Tables']['trips']['Row'];
 
@@ -106,10 +119,8 @@ function toTripSummary(row: Pick<
   | 'longitude'
   | 'place_provider'
   | 'place_external_id'
-  | 'cover_image_url'
-  | 'cover_image_credit'
-  | 'cover_image_link'
-  | 'cover_image_provider'
+  | 'cover_images'
+  | 'cover_image_index'
 >): TripSummary {
   return {
     id: row.id,
@@ -131,14 +142,19 @@ function toTripSummary(row: Pick<
           externalId: row.place_external_id,
         }
       : null,
-    coverImage: row.cover_image_url
-      ? {
-          url: row.cover_image_url,
-          credit: row.cover_image_credit,
-          link: row.cover_image_link,
-          provider: row.cover_image_provider,
-        }
-      : null,
+    cover: {
+      // Lọc phần tử thiếu url: một bản ghi hỏng không được làm sập cả màn hình.
+      images: (row.cover_images ?? [])
+        .filter((image) => typeof image?.url === 'string' && image.url.length > 0)
+        .map((image) => ({
+          url: image.url,
+          thumbUrl: image.thumbUrl || image.url,
+          credit: image.credit ?? null,
+          link: image.link ?? null,
+          provider: image.provider ?? null,
+        })),
+      index: row.cover_image_index ?? 0,
+    },
   };
 }
 
@@ -173,11 +189,15 @@ export interface CreateTripInput {
   readonly endDate?: string | null;
   /** Điểm đến chọn từ màn tìm địa điểm. Để trống thì chọn sau cũng được. */
   readonly place?: TripPlace | null;
-  readonly coverImage?: TripCoverImage | null;
+  readonly cover?: TripCoverGallery | null;
 }
 
-/** Trải hai object địa điểm thành các cột phẳng mà DB dùng. */
-function placeColumns(place?: TripPlace | null, coverImage?: TripCoverImage | null) {
+/** Trải object địa điểm và bộ ảnh thành các cột phẳng mà DB dùng. */
+function placeColumns(place?: TripPlace | null, cover?: TripCoverGallery | null) {
+  const images = cover?.images ?? [];
+  // Kẹp chỉ số vào trong mảng: DB có ràng buộc, nhưng chặn ở đây thì lỗi hiện
+  // ra dưới dạng ảnh sai chứ không phải cả lệnh ghi bị từ chối.
+  const index = images.length === 0 ? 0 : Math.min(Math.max(cover?.index ?? 0, 0), images.length - 1);
   return {
     place_name: place?.name ?? null,
     place_address: place?.address ?? null,
@@ -186,10 +206,14 @@ function placeColumns(place?: TripPlace | null, coverImage?: TripCoverImage | nu
     longitude: place?.longitude ?? null,
     place_provider: place?.provider ?? null,
     place_external_id: place?.externalId ?? null,
-    cover_image_url: coverImage?.url ?? null,
-    cover_image_credit: coverImage?.credit ?? null,
-    cover_image_link: coverImage?.link ?? null,
-    cover_image_provider: coverImage?.provider ?? null,
+    cover_images: images.map((image) => ({
+      url: image.url,
+      thumbUrl: image.thumbUrl,
+      credit: image.credit,
+      link: image.link,
+      provider: image.provider,
+    })),
+    cover_image_index: index,
   };
 }
 
@@ -215,7 +239,7 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
         start_date: input.startDate ?? null,
         end_date: input.endDate ?? null,
         created_by: createdBy,
-        ...placeColumns(input.place, input.coverImage),
+        ...placeColumns(input.place, input.cover),
       })
       .select('id'),
   );
@@ -237,12 +261,17 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
 export async function updateTripPlace(
   tripId: string,
   place: TripPlace | null,
-  coverImage: TripCoverImage | null,
+  cover: TripCoverGallery | null,
 ): Promise<void> {
+  unwrapVoid(await supabase.from('trips').update(placeColumns(place, cover)).eq('id', tripId));
+}
+
+/** Đổi riêng ảnh đang hiển thị, không đụng tới danh sách hay địa điểm. */
+export async function updateCoverIndex(tripId: string, index: number): Promise<void> {
   unwrapVoid(
     await supabase
       .from('trips')
-      .update(placeColumns(place, coverImage))
+      .update({ cover_image_index: Math.max(0, index) })
       .eq('id', tripId),
   );
 }

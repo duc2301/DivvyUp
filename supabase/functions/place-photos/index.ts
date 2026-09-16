@@ -26,8 +26,24 @@ import {
   fetchWithTimeout,
   handlePreflight,
   jsonResponse,
-  requireAuthHeader,
+  hasCallerCredential,
 } from '../_shared/http.ts';
+
+
+/**
+ * Mô tả hình dạng khoá mà KHÔNG lộ khoá.
+ *
+ * Chỉ trả về 4 ký tự đầu, độ dài, và có dính khoảng trắng hay không — đủ để
+ * phân biệt "sk." với "pk." hoặc phát hiện dấu nháy/xuống dòng lọt vào lúc đặt
+ * secret, mà không tiết lộ gì có thể dùng lại được.
+ */
+function describeKeyShape(raw: string): string {
+  const trimmed = raw.trim();
+  const parts = [`dài ${raw.length} ký tự`, `bắt đầu bằng "${trimmed.slice(0, 4)}"`];
+  if (raw !== trimmed) parts.push('CÓ khoảng trắng/xuống dòng ở đầu hoặc cuối');
+  if (/^["']|["']$/.test(trimmed)) parts.push('CÓ dấu nháy bao quanh');
+  return parts.join(', ');
+}
 
 interface Photo {
   id: string;
@@ -101,6 +117,28 @@ async function fromPinterest(query: string, limit: number, countryCode: string):
  * dùng lại isolate giữa các request, nên biến module sẽ mang lỗi của lượt
  * trước sang lượt sau.
  */
+
+/**
+ * Bỏ dấu tiếng Việt trước khi tìm ảnh.
+ *
+ * Kho ảnh của Unsplash và Pinterest lập chỉ mục bằng tiếng Anh, nên từ khoá có
+ * dấu gần như không khớp gì. Đo thực tế trên Unsplash:
+ *   "Đà Lạt Việt Nam"  ->     1 ảnh
+ *   "Da Lat Viet Nam"  -> 3.433 ảnh
+ *   "Hội An Việt Nam"  ->    50 ảnh
+ *   "Hoi An Viet Nam"  -> 2.322 ảnh
+ *
+ * NFD tách dấu thanh ra khỏi nguyên âm, nhưng KHÔNG tách được đ/Đ vì đó là chữ
+ * cái riêng chứ không phải chữ có dấu — phải thay tay.
+ */
+function stripDiacritics(input: string): string {
+  return input
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .replace(/đ/g, 'd')
+    .replace(/Đ/g, 'D');
+}
+
 type PhotoAttempt = { photos: Photo[] } | { failure: string };
 
 async function fromUnsplash(query: string, limit: number): Promise<PhotoAttempt> {
@@ -126,7 +164,8 @@ async function fromUnsplash(query: string, limit: number): Promise<PhotoAttempt>
     return {
       failure:
         response.status === 401
-          ? 'Unsplash từ chối khoá (401). Kiểm tra lại Access Key, không phải Secret Key.'
+          ? 'Unsplash từ chối khoá (401). Cần Access Key, không phải Secret Key. ' +
+            `Khoá hiện tại: ${describeKeyShape(key)}.`
           : `Unsplash trả lỗi ${response.status}.`,
     };
   }
@@ -165,16 +204,18 @@ Deno.serve(async (req) => {
   const preflight = handlePreflight(req);
   if (preflight) return preflight;
 
-  if (!requireAuthHeader(req)) {
-    return errorResponse('Cần đăng nhập để xem ảnh địa điểm.', 401);
+  if (!hasCallerCredential(req)) {
+    return errorResponse('Thiếu khoá truy cập của ứng dụng.', 401);
   }
 
   let query = '';
+  let fallback = '';
   let limit = 12;
   let countryCode = 'VN';
   try {
     const body = await req.json();
     query = typeof body.query === 'string' ? body.query.trim() : '';
+    fallback = typeof body.fallback === 'string' ? body.fallback.trim() : '';
     if (typeof body.limit === 'number') limit = Math.min(Math.max(body.limit, 1), 30);
     if (typeof body.countryCode === 'string' && body.countryCode.length === 2) {
       countryCode = body.countryCode.toUpperCase();
@@ -185,13 +226,24 @@ Deno.serve(async (req) => {
 
   if (query.length < 2) return jsonResponse({ photos: [], provider: 'unsplash' });
 
-  const pinterest = await fromPinterest(query, limit, countryCode);
-  if (pinterest) return jsonResponse({ photos: pinterest, provider: 'pinterest' });
+  // Thử lần lượt: từ khoá đầy đủ đã bỏ dấu, rồi tới từ khoá dự phòng (thường là
+  // tên địa điểm không kèm quốc gia). Địa danh ít nổi tiếng hay không có ảnh khi
+  // ghép cả tên nước, nhưng riêng tên thì vẫn có.
+  const attempts = [stripDiacritics(query), fallback ? stripDiacritics(fallback) : '']
+    .filter((term, index, all) => term.length >= 2 && all.indexOf(term) === index);
 
-  const unsplash = await fromUnsplash(query, limit);
-  if ('photos' in unsplash) {
-    return jsonResponse({ photos: unsplash.photos, provider: 'unsplash' });
+  let lastFailure = 'Không tìm được ảnh nào cho địa điểm này.';
+
+  for (const term of attempts) {
+    const pinterest = await fromPinterest(term, limit, countryCode);
+    if (pinterest) return jsonResponse({ photos: pinterest, provider: 'pinterest' });
+
+    const unsplash = await fromUnsplash(term, limit);
+    if ('photos' in unsplash) {
+      return jsonResponse({ photos: unsplash.photos, provider: 'unsplash' });
+    }
+    lastFailure = unsplash.failure;
   }
 
-  return errorResponse(unsplash.failure, 500);
+  return errorResponse(lastFailure, 500);
 });
