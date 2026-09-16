@@ -51,7 +51,12 @@ export default function JoinTripScreen() {
         <TextField
           label="Mã tham gia"
           value={code}
-          onChangeText={(text) => setCode(text.toUpperCase())}
+          onChangeText={(text) => {
+            setCode(text.toUpperCase());
+            // Danh sách chỗ đang hiện thuộc về mã CŨ. Giữ lại thì chọn tên sẽ
+            // gửi mã mới kèm chỗ của chuyến cũ.
+            setPreview(null);
+          }}
           placeholder="8 ký tự"
           autoCapitalize="characters"
           autoCorrect={false}

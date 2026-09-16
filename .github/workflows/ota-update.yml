@@ -1,4 +1,4 @@
-name: Auto OTA Update
+name: OTA Update
 
 on:
   push:
@@ -6,20 +6,43 @@ on:
       - main
     paths-ignore:
       - '**.md'
+      - 'LICENSE'
       - '.gitignore'
+      - '.github/**'
+      - 'supabase/**'
+      - 'scripts/**'
+  workflow_dispatch:
+    inputs:
+      message:
+        description: Ghi chú cho bản cập nhật
+        required: false
+        default: Cập nhật thủ công
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ota-update
+  cancel-in-progress: true
 
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
   update:
-    name: Expo OTA Update
+    name: Publish EAS Update (channel preview)
+    needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
 
       - name: Setup EAS CLI
         uses: expo/expo-github-action@v8
@@ -28,7 +51,25 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
+        run: npm ci
+
+      - name: Load app env from eas.json (profile preview)
+        run: |
+          for key in EXPO_PUBLIC_SUPABASE_URL EXPO_PUBLIC_SUPABASE_KEY; do
+            value=$(jq -r --arg k "$key" '.build.preview.env[$k] // empty' eas.json)
+            if [ -z "$value" ]; then
+              echo "::error::Thiếu $key trong build.preview.env của eas.json"
+              exit 1
+            fi
+            echo "$key=$value" >> "$GITHUB_ENV"
+          done
 
       - name: Publish update
-        run: eas update --auto --non-interactive
+        env:
+          UPDATE_MESSAGE: ${{ github.event.inputs.message || github.event.head_commit.message }}
+        run: |
+          eas update \
+            --channel preview \
+            --platform android \
+            --message "${UPDATE_MESSAGE:-Cập nhật từ ${GITHUB_SHA::7}}" \
+            --non-interactive

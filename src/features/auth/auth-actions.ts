@@ -77,6 +77,20 @@ function toDataError(error: AuthError): DataError {
   if (code === 'email_address_invalid' || lower.includes('unable to validate email')) {
     return new DataError('Email không hợp lệ.', code);
   }
+  if (code === 'pkce_code_verifier_not_found') {
+    return new DataError(
+      'Hãy mở link trên đúng thiết bị (và đúng trình duyệt) mà bạn đã bấm "Quên mật khẩu", hoặc yêu cầu gửi lại email.',
+      code,
+    );
+  }
+  if (
+    code === 'flow_state_not_found' ||
+    code === 'flow_state_expired' ||
+    code === 'bad_code_verifier' ||
+    code === 'otp_expired'
+  ) {
+    return new DataError('Link đã hết hạn hoặc đã được dùng. Hãy yêu cầu gửi lại email mới.', code);
+  }
   if (code === 'session_not_found' || code === 'session_expired' || lower.includes('auth session missing')) {
     return new DataError('Phiên đặt lại mật khẩu đã hết hạn. Hãy yêu cầu gửi lại email mới.', code);
   }
@@ -176,16 +190,24 @@ export async function requestPasswordReset(email: string): Promise<void> {
   if (error) throw toDataError(error);
 }
 
-/** Dựng phiên tạm từ token trong link đặt lại mật khẩu. */
-export async function startPasswordRecovery(
-  accessToken: string,
-  refreshToken: string,
-): Promise<void> {
-  const { error } = await supabase.auth.setSession({
-    access_token: accessToken,
-    refresh_token: refreshToken,
-  });
+/**
+ * Đổi mã PKCE trong link đặt lại mật khẩu ra phiên tạm.
+ *
+ * Chỉ nhận luồng `recovery`: một mã PKCE hợp lệ nhưng thuộc luồng khác (vd link
+ * xác nhận đăng ký) không được mở ô đổi mật khẩu.
+ */
+export async function startPasswordRecovery(code: string, flowId: string | null): Promise<void> {
+  const { data, error } = await supabase.auth.exchangeCodeForSession(
+    code,
+    flowId ? { flowId } : undefined,
+  );
   if (error) throw toDataError(error);
+  // supabase-js trả redirectType lúc chạy nhưng chưa khai trong kiểu trả về.
+  const redirectType = (data as { redirectType?: string | null }).redirectType;
+  if (redirectType !== 'recovery') {
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    throw new DataError('Đây không phải link đặt lại mật khẩu. Hãy yêu cầu gửi lại email.');
+  }
 }
 
 /**
@@ -193,13 +215,23 @@ export async function startPasswordRecovery(
  * mới ở màn đăng nhập — đúng luồng người dùng mong đợi, và cũng là cách xác
  * nhận họ nhớ đúng thứ vừa gõ.
  */
-export async function completePasswordReset(newPassword: string): Promise<void> {
+export async function completePasswordReset(
+  newPassword: string,
+): Promise<{ otherDevicesSignedOut: boolean }> {
   if (newPassword.length < 6) throw new DataError('Mật khẩu phải có ít nhất 6 ký tự.');
   const { error } = await supabase.auth.updateUser({ password: newPassword });
   if (error) throw toDataError(error);
-  // Chỉ xoá phiên trên máy này. Mật khẩu đã đổi xong thì một lỗi mạng ở bước
-  // dọn dẹp không đáng để báo thất bại.
-  await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+  // Đăng xuất MỌI thiết bị: đổi mật khẩu thường là vì nghi bị lộ, phiên cũ ở
+  // máy khác phải chết theo. Mật khẩu đã đổi xong nên lỗi mạng ở bước này
+  // không đáng báo thất bại — ít nhất vẫn xoá phiên trên máy này.
+  const { error: signOutError } = await supabase.auth.signOut({ scope: 'global' });
+  if (signOutError) {
+    await supabase.auth.signOut({ scope: 'local' }).catch(() => undefined);
+    // Báo lên chứ không im lặng: người đổi mật khẩu vì nghi bị lộ cần biết
+    // phiên ở máy khác CÓ THỂ còn sống.
+    return { otherDevicesSignedOut: false };
+  }
+  return { otherDevicesSignedOut: true };
 }
 
 export async function signOut(): Promise<void> {

@@ -227,6 +227,24 @@ export async function listExpenses(
   return remoteExpenses.listExpenses(tripId, options);
 }
 
+const EXPENSE_PAGE_SIZE = 500;
+
+/**
+ * MỌI khoản chi của chuyến, tải theo trang tới khi hết.
+ *
+ * Màn chuyến đi cộng "tổng chi" từ danh sách này. Dùng listExpenses mặc định
+ * (50 khoản) thì chuyến dài bị hụt tổng chi, và các khoản cũ không mở ra sửa
+ * được — trong khi số dư (tính ở DB) vẫn đếm đủ, hai con số mâu thuẫn nhau.
+ */
+export async function listAllExpenses(tripId: string): Promise<ExpenseSummary[]> {
+  const all: ExpenseSummary[] = [];
+  for (;;) {
+    const page = await listExpenses(tripId, { limit: EXPENSE_PAGE_SIZE, offset: all.length });
+    all.push(...page);
+    if (page.length < EXPENSE_PAGE_SIZE) return all;
+  }
+}
+
 export async function getExpenseDetail(expenseId: string): Promise<ExpenseDetail> {
   if (await isGuestMode()) {
     const found = (await localStore.listAllExpenses()).find((item) => item.id === expenseId);
@@ -236,8 +254,25 @@ export async function getExpenseDetail(expenseId: string): Promise<ExpenseDetail
   return remoteExpenses.getExpenseDetail(expenseId);
 }
 
+/**
+ * Chế độ khách không có DB để kiểm lại, nên đây là chốt DUY NHẤT. Một khoản chi
+ * lệch tổng lọt vào AsyncStorage thì computeBalances ném lỗi và màn chuyến đi
+ * chết hẳn trên máy đó — không còn đường vào để sửa.
+ */
+async function assertGuestExpense(input: SaveExpenseInput): Promise<void> {
+  remoteExpenses.assertSharesBalance(input);
+  const memberIds = new Set((await localStore.listMembers(input.tripId)).map((member) => member.id));
+  if (!memberIds.has(input.paidByMemberId)) {
+    throw new DataError('Người đại diện trả tiền không thuộc chuyến đi này.');
+  }
+  if (input.shares.some((share) => !memberIds.has(share.participantId))) {
+    throw new DataError('Danh sách có người không thuộc chuyến đi.');
+  }
+}
+
 export async function createExpense(input: SaveExpenseInput): Promise<string> {
   if (await isGuestMode()) {
+    await assertGuestExpense(input);
     const expense: StoredExpense = {
       id: localId(),
       tripId: input.tripId,
@@ -259,6 +294,7 @@ export async function updateExpense(expenseId: string, input: SaveExpenseInput):
   if (await isGuestMode()) {
     const found = (await localStore.listAllExpenses()).find((item) => item.id === expenseId);
     if (!found) throw new DataError('Không tìm thấy khoản chi.');
+    await assertGuestExpense({ ...input, tripId: found.tripId });
     await localStore.saveExpense({
       ...found,
       description: input.description.trim(),

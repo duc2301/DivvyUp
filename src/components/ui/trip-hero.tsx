@@ -32,6 +32,12 @@ interface TripHeroProps {
   readonly onChangeIndex: (index: number) => void;
   /** Nút ở góc trên bên phải, đối xứng với nút quay lại. */
   readonly rightAction?: ReactNode;
+  /**
+   * Dữ liệu chuyến đi chưa về. Lúc này `images` rỗng không có nghĩa là "chưa
+   * chọn địa điểm" — không được hiện lời mời chọn, kẻo chuyến đã có ảnh cũng
+   * chớp lên "Chọn địa điểm" và chạm nhầm là mở màn chọn.
+   */
+  readonly loading?: boolean;
 }
 
 const HERO_HEIGHT = 280;
@@ -54,6 +60,7 @@ export function TripHero({
   onEditPlace,
   onChangeIndex,
   rightAction,
+  loading = false,
 }: TripHeroProps) {
   const router = useRouter();
   // Nút phải nằm dưới tai thỏ. Header mặc định của Stack đã tắt nên không có ai
@@ -118,8 +125,10 @@ export function TripHero({
           pagingEnabled
           showsHorizontalScrollIndicator={false}
           onMomentumScrollEnd={handleMomentumEnd}
-          onScroll={handleScroll}
-          scrollEventThrottle={32}
+          // Chỉ web cần onScroll (không có sự kiện hết quán tính). Truyền trên
+          // native là ~30 sự kiện/giây chạy qua JS chỉ để return.
+          onScroll={Platform.OS === 'web' ? handleScroll : undefined}
+          scrollEventThrottle={Platform.OS === 'web' ? 32 : undefined}
           // contentOffset chỉ có tác dụng trên iOS. Android và web phải cuộn
           // tay — nhưng chỉ cuộn được SAU khi nội dung đã đo xong kích thước,
           // gọi sớm hơn thì bị kẹp về 0 và lại hiện ảnh đầu tiên.
@@ -138,7 +147,7 @@ export function TripHero({
             />
           ))}
         </ScrollView>
-      ) : (
+      ) : loading ? null : (
         <>
             <Image
               source={require('@/assets/images/trip-placeholder.jpg')}
@@ -220,7 +229,11 @@ export function TripHero({
           // openURL reject khi máy không mở được URL. `void` bỏ giá trị trả về
           // nhưng KHÔNG bắt rejection — bản dev sẽ hiện red box đè lên màn hình.
           onPress={() => {
-            if (current.link) void Linking.openURL(current.link).catch(() => undefined);
+            // Chỉ mở https: cột ảnh bìa là jsonb do client ghi, nên link có thể
+            // là `javascript:` hay scheme của app khác chứ không chắc là Unsplash.
+            if (current.link?.startsWith('https://')) {
+              void Linking.openURL(current.link).catch(() => undefined);
+            }
           }}
           className="absolute bottom-10 right-3 rounded-full bg-black/45 px-2 py-1">
           <Text className="text-[10px] text-white">Ảnh: {current.credit}</Text>

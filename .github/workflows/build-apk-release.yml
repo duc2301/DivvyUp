@@ -1,24 +1,51 @@
-name: Build APK and Attach to Release
+name: Release APK
 
 on:
   release:
     types: [published]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Tag của release đã tạo (vd v1.0.1)
+        required: true
 
 permissions:
   contents: write
 
+concurrency:
+  group: release-apk-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  cancel-in-progress: false
+
 jobs:
+  verify:
+    uses: ./.github/workflows/ci.yml
+
   build:
-    name: Build APK and Upload
+    name: Build APK and attach to release
+    needs: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v5
+        with:
+          ref: ${{ env.TAG }}
+
+      - name: Check tag matches app.json version
+        run: |
+          version=$(jq -r '.expo.version' app.json)
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::Tag $TAG không khớp version $version trong app.json. Sửa app.json thành ${TAG#v} (hoặc đặt tag v$version) rồi tạo lại release."
+            exit 1
+          fi
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v5
         with:
           node-version: 22
+          cache: npm
 
       - name: Setup EAS CLI
         uses: expo/expo-github-action@v8
@@ -27,14 +54,28 @@ jobs:
           token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Install dependencies
-        run: npm install --legacy-peer-deps
-
-      - name: Build APK via EAS
+        run: npm ci
+        
+      - name: Build APK on EAS
         run: |
-          eas build -p android --profile preview --non-interactive --wait --output=./DivvyUp.apk
+          eas build \
+            --platform android \
+            --profile preview \
+            --non-interactive \
+            --wait \
+            --json > build.json
+          apk_url=$(jq -r '.[0].artifacts.buildUrl // empty' build.json)
+          if [ -z "$apk_url" ]; then
+            echo "::error::EAS không trả về link APK"
+            cat build.json
+            exit 1
+          fi
+          echo "APK_URL=$apk_url" >> "$GITHUB_ENV"
 
-      - name: Upload APK to Release
+      - name: Download APK
+        run: curl --fail --location --retry 3 --output "DivvyUp-${TAG}.apk" "$APK_URL"
+
+      - name: Upload APK to release
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release upload ${{ github.event.release.tag_name }} ./DivvyUp.apk --clobber
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload "$TAG" "DivvyUp-${TAG}.apk" --clobber --repo "$GITHUB_REPOSITORY"

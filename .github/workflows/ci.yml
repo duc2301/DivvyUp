@@ -1,0 +1,47 @@
+# Kiểm tra code: typecheck + unit test.
+#
+# Chạy cho pull request và cho các nhánh KHÁC main. Nhánh main không chạy file
+# này trực tiếp: ota-update.yml và build-apk-release.yml gọi lại nó (workflow_call)
+# làm bước đầu tiên, nên mỗi lần push lên main chỉ kiểm một lần.
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches-ignore:
+      - main
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Typecheck & test
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      # `npm ci` thay cho `npm install`: cài đúng theo package-lock.json và báo
+      # lỗi nếu lock lệch package.json. Máy chủ EAS Build cũng chạy `npm ci`, nên
+      # CI qua được thì build trên EAS cũng cài được.
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Unit tests
+        run: npm test

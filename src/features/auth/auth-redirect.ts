@@ -1,15 +1,20 @@
 /**
  * Đọc thông tin Supabase Auth gắn vào URL khi người dùng bấm link trong email.
  *
- * Supabase (luồng implicit, mặc định của supabase-js) chuyển hướng về app kèm:
- *   - thành công: `...#access_token=…&refresh_token=…&type=signup|recovery`
- *   - thất bại:   `...#error=access_denied&error_code=otp_expired&error_description=…`
- * Tuỳ phiên bản, lỗi có khi nằm ở query (`?error=…`) thay vì hash — nên đọc cả hai.
+ * App dùng luồng PKCE, Supabase chuyển hướng về app kèm:
+ *   - thành công: `...?code=…&sb_flow_id=…`
+ *   - thất bại:   `...?error=access_denied&error_code=otp_expired&error_description=…`
+ * Lỗi có khi nằm ở hash thay vì query, và link cũ (luồng implicit) mang token ở
+ * hash — nên đọc cả hai chỗ.
  *
  * Hàm thuần, không đụng React Native, để kiểm thử được bằng `node --test`.
  */
 
 export interface AuthRedirect {
+  /** Mã PKCE dùng một lần — đổi ra phiên bằng exchangeCodeForSession. */
+  readonly code: string | null;
+  /** Định danh luồng PKCE supabase-js gắn vào redirect (tham số sb_flow_id). */
+  readonly flowId: string | null;
   readonly accessToken: string | null;
   readonly refreshToken: string | null;
   /** 'signup' | 'recovery' | 'magiclink' | … — để nguyên chuỗi, Supabase có thể thêm loại mới. */
@@ -41,6 +46,8 @@ export function parseAuthRedirect(url: string | null | undefined): AuthRedirect 
   };
 
   const result: AuthRedirect = {
+    code: read('code'),
+    flowId: read('sb_flow_id'),
     accessToken: read('access_token'),
     refreshToken: read('refresh_token'),
     type: read('type'),
@@ -49,7 +56,10 @@ export function parseAuthRedirect(url: string | null | undefined): AuthRedirect 
   };
 
   const hasAnything =
-    result.accessToken !== null || result.refreshToken !== null || result.errorCode !== null;
+    result.code !== null ||
+    result.accessToken !== null ||
+    result.refreshToken !== null ||
+    result.errorCode !== null;
   return hasAnything ? result : null;
 }
 

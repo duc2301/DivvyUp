@@ -86,6 +86,23 @@ describe('parseAmount — đọc số người dùng gõ', () => {
     assert.equal(parseAmount('$12.34', 'USD')?.minor, 1_234);
   });
 
+  test('không đoán bừa khi dấu phân cách sai cấu trúc', () => {
+    // Mỗi dòng dưới đây từng bị đọc thành một con số lệch 10–1000 lần.
+    assert.equal(parseAmount('1,5', 'VND'), null);
+    assert.equal(parseAmount('12.5', 'VND'), null);
+    assert.equal(parseAmount('45.00', 'VND'), null);
+    assert.equal(parseAmount('1.25.000', 'VND'), null);
+    assert.equal(parseAmount('0.123', 'USD'), null);
+    assert.equal(parseAmount('1.2.3', 'USD'), null);
+    assert.equal(parseAmount('1.234.56', 'USD'), null);
+    // Các cách viết hợp lệ vẫn đọc đúng.
+    assert.equal(parseAmount('.5', 'USD')?.minor, 50);
+    assert.equal(parseAmount('0.05', 'USD')?.minor, 5);
+    assert.equal(parseAmount('1,000.00', 'USD')?.minor, 100_000);
+    assert.equal(parseAmount('1.234,56', 'EUR')?.minor, 123_456);
+    assert.equal(parseAmount('1234567', 'VND')?.minor, 1_234_567);
+  });
+
   test('trả null thay vì ném lỗi khi đầu vào sai', () => {
     assert.equal(parseAmount('', 'VND'), null);
     assert.equal(parseAmount('abc', 'VND'), null);

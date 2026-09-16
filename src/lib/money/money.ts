@@ -181,24 +181,42 @@ export function parseAmount(input: string, currency: CurrencyCode): Money | null
   let intPart: string;
   let fracPart = '';
 
+  // Phần nguyên chỉ hợp lệ khi là dãy số trơn, hoặc nhóm ĐỦ 3 chữ số sau mỗi
+  // dấu phân cách ("1.250.000"). Không kiểm cấu trúc thì "1,5" đồng bị đọc
+  // thành 15 đồng và "0.123" đô thành $123 — sai lệch hàng chục, hàng nghìn lần
+  // mà không báo gì. Nhóm đầu không được bắt đầu bằng 0 vì cùng lý do.
+  const readInteger = (value: string): string | null => {
+    if (/^[0-9]+$/.test(value)) return value;
+    if (/^[1-9][0-9]{0,2}([.,][0-9]{3})+$/.test(value)) return value.replace(/[.,]/g, '');
+    return null;
+  };
+
   if (info.decimals === 0) {
-    // Không có phần lẻ: mọi dấu chấm/phẩy đều là phân cách nghìn.
-    intPart = s.replace(/[.,]/g, '');
+    // Không có phần lẻ: dấu chấm/phẩy chỉ được là phân cách nghìn.
+    const integer = readInteger(s);
+    if (integer === null) return null;
+    intPart = integer;
   } else {
     const lastSeparator = Math.max(s.lastIndexOf('.'), s.lastIndexOf(','));
-    if (lastSeparator === -1) {
-      intPart = s;
+    const tail = lastSeparator === -1 ? '' : s.slice(lastSeparator + 1);
+    // Dấu cuối được coi là dấu thập phân khi phần đuôi đủ ngắn.
+    // "1.234" (3 chữ số) là một nghìn hai trăm ba tư, không phải 1 đồng 234 cent.
+    const isDecimalSeparator =
+      lastSeparator !== -1 && tail.length > 0 && tail.length <= info.decimals;
+
+    if (isDecimalSeparator) {
+      const head = s.slice(0, lastSeparator);
+      const separator = s[lastSeparator];
+      // Dấu thập phân không được trùng dấu phân cách nghìn: "1.234.56" là gõ nhầm.
+      if (head.includes(separator)) return null;
+      const integer = head === '' ? '0' : readInteger(head);
+      if (integer === null) return null;
+      intPart = integer;
+      fracPart = tail;
     } else {
-      const tail = s.slice(lastSeparator + 1);
-      // Dấu cuối được coi là dấu thập phân khi phần đuôi đủ ngắn.
-      // "1.234" (3 chữ số) là một nghìn hai trăm ba tư, không phải 1 đồng 234 cent.
-      const isDecimalSeparator = tail.length > 0 && tail.length <= info.decimals;
-      if (isDecimalSeparator) {
-        intPart = s.slice(0, lastSeparator).replace(/[.,]/g, '');
-        fracPart = tail;
-      } else {
-        intPart = s.replace(/[.,]/g, '');
-      }
+      const integer = readInteger(s);
+      if (integer === null) return null;
+      intPart = integer;
     }
   }
 

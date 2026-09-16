@@ -19,12 +19,24 @@
 --           public.guard_trip_member_changes().
 -- ============================================================================
 
--- Khôi phục mọi thành viên đã bị xoá mềm TRƯỚC khi dựng trigger, để số dư của
--- các chuyến đang hỏng vì lỗi trên trở lại cân bằng. Chạy trước vì sau khi có
--- trigger, chính lệnh này cũng sẽ bị chặn.
-update public.trip_members
+-- Khôi phục thành viên đã bị xoá mềm NHƯNG vẫn dính khoản chi/tất toán còn hiệu
+-- lực — đúng những người làm số dư lệch. KHÔNG khôi phục tất cả: người bị gỡ
+-- để thu hồi quyền truy cập (còn user_id) sẽ lấy lại quyền đọc cả chuyến, và
+-- tên gõ nhầm đã xoá sẽ hiện lại trong form chia đều.
+-- Chạy trước khi dựng trigger, vì sau đó chính lệnh này cũng bị chặn.
+update public.trip_members tm
 set removed_at = null
-where removed_at is not null;
+where tm.removed_at is not null
+  and (
+    exists (select 1 from public.expenses e
+            where e.paid_by = tm.id and e.deleted_at is null)
+    or exists (select 1 from public.expense_shares es
+               join public.expenses e on e.id = es.expense_id
+               where es.member_id = tm.id and e.deleted_at is null)
+    or exists (select 1 from public.settlements s
+               where (s.from_member = tm.id or s.to_member = tm.id)
+                 and s.deleted_at is null)
+  );
 
 create or replace function public.guard_trip_member_changes()
 returns trigger
@@ -38,8 +50,9 @@ begin
       using errcode = '42501';
   end if;
 
-  -- auth.uid() null nghĩa là đang chạy bằng quyền quản trị (SQL Editor, RPC
-  -- SECURITY DEFINER) — không phải người dùng gọi qua PostgREST.
+  -- auth.uid() null: SQL Editor/psql. (RPC SECURITY DEFINER gọi qua PostgREST
+  -- VẪN có auth.uid().) Migration 20260917_1000 thay trigger này bằng bản chặt
+  -- hơn, có phân biệt phiên quản trị đúng cách.
   if new.role is distinct from old.role
      and (select auth.uid()) is not null
      and not public.is_trip_owner(new.trip_id) then

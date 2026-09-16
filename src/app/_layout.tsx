@@ -1,4 +1,5 @@
 import '@/global.css';
+import '@/lib/nativewind-interop';
 
 import { BeVietnamPro_600SemiBold, useFonts } from '@expo-google-fonts/be-vietnam-pro';
 import {
@@ -6,11 +7,12 @@ import {
   DefaultTheme,
   Stack,
   ThemeProvider as NavigationThemeProvider,
+  useGlobalSearchParams,
   useRouter,
   useSegments,
 } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -39,15 +41,37 @@ const PUBLIC_SCREENS = new Set(['sign-in', 'forgot-password', 'reset-password'])
 const SIGNED_OUT_ONLY = new Set(['sign-in', 'forgot-password']);
 
 function AuthGate() {
-  const { session, loading, isGuest } = useSessionContext();
+  const { session, loading, isGuest, setGuestMode } = useSessionContext();
   const segments = useSegments();
   const router = useRouter();
+  const params = useGlobalSearchParams<{ confirmed?: string; reset?: string }>();
+  const fromEmailLink =
+    params.confirmed === '1' || params.reset === '1' || params.reset === 'local';
+  // Đã xét việc tắt chế độ khách cho lần mở từ link này chưa. Không có chốt,
+  // bấm "Tiếp tục với tư cách khách" ngay trên màn đó bật cờ lên rồi bị chính
+  // nhánh bên dưới tắt đi — nút trông như không làm gì.
+  const guestClearedForLink = useRef(false);
 
   useEffect(() => {
     if (loading) return;
 
     const screen = segments[0] ?? '';
     const canUseApp = session !== null || isGuest;
+
+    // Khách bấm link trong email (xác nhận đăng ký, đổi mật khẩu xong): họ đang
+    // muốn dùng tài khoản. Tắt chế độ khách thay vì đá về trang chủ, không thì
+    // thông báo "đăng ký thành công" không bao giờ hiện ra.
+    if (!fromEmailLink) {
+      guestClearedForLink.current = false;
+    } else if (screen === 'sign-in' && !guestClearedForLink.current) {
+      // Chỉ xét ĐÚNG MỘT LẦN, lúc màn vừa mở từ link: sau đó người dùng tự
+      // bấm "Tiếp tục với tư cách khách" thì phải được tôn trọng.
+      guestClearedForLink.current = true;
+      if (session === null && isGuest) {
+        void setGuestMode(false);
+        return;
+      }
+    }
 
     if (!canUseApp && !PUBLIC_SCREENS.has(screen)) {
       router.replace('/sign-in');
@@ -56,7 +80,9 @@ function AuthGate() {
       // cách khách" chỉ bật được cờ mà không bao giờ rời khỏi màn đăng nhập.
       router.replace('/');
     }
-  }, [session, loading, isGuest, JSON.stringify(segments), router]);
+    // setGuestMode cố ý không nằm trong deps: hàm được tạo lại mỗi render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [session, loading, isGuest, JSON.stringify(segments), router, fromEmailLink]);
 
   // Mọi màn hình tự vẽ header bằng AppHeader để giữ màu trong một bảng token
   // duy nhất, nên tắt header mặc định của Stack.

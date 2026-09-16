@@ -15,6 +15,8 @@ describe('parseAuthRedirect', () => {
       'divvyup://reset-password#access_token=abc&expires_in=3600&refresh_token=def&token_type=bearer&type=recovery',
     );
     assert.deepEqual(result, {
+      code: null,
+      flowId: null,
       accessToken: 'abc',
       refreshToken: 'def',
       type: 'recovery',
@@ -43,6 +45,15 @@ describe('parseAuthRedirect', () => {
   it('đọc lỗi nằm ở query', () => {
     const result = parseAuthRedirect('divvyup://sign-in?error=access_denied&error_description=x');
     assert.equal(result?.errorCode, 'access_denied');
+  });
+
+  it('đọc mã PKCE và flow id ở query', () => {
+    const result = parseAuthRedirect(
+      'divvyup://reset-password?code=9f1c2a&sb_flow_id=0b8e7d3c-1111-4222-8333-444455556666',
+    );
+    assert.equal(result?.code, '9f1c2a');
+    assert.equal(result?.flowId, '0b8e7d3c-1111-4222-8333-444455556666');
+    assert.equal(result?.accessToken, null);
   });
 
   it('coi giá trị rỗng là không có', () => {

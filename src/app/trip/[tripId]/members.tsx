@@ -20,7 +20,8 @@ import { describeError, useAsync } from '@/lib/data/use-async';
 
 interface MemberRowProps {
   readonly member: TripMember;
-  readonly onRename: (id: string, name: string) => void;
+  /** Trả về false nếu lưu thất bại. */
+  readonly onRename: (id: string, name: string) => Promise<boolean>;
 }
 
 /**
@@ -43,8 +44,14 @@ function MemberRow({ member, onRename }: MemberRowProps) {
         // lượt gọi mạng, và mỗi lượt đều có thể lỗi giữa chừng.
         onBlur={() => {
           const trimmed = draft.trim();
-          if (trimmed !== '' && trimmed !== member.displayName) onRename(member.id, trimmed);
-          else setDraft(member.displayName);
+          if (trimmed !== '' && trimmed !== member.displayName) {
+            // Lỗi thì trả ô về tên cũ — không thì ô hiện tên mới như đã lưu.
+            void onRename(member.id, trimmed).then((saved) => {
+              if (!saved) setDraft(member.displayName);
+            });
+          } else {
+            setDraft(member.displayName);
+          }
         }}
         accessibilityLabel={`Tên của ${member.displayName}`}
         className="min-h-11 min-w-0 flex-1 rounded-xl px-2 text-base text-foreground"
@@ -79,14 +86,16 @@ export default function TripMembersScreen() {
     return { groups, members };
   }, [tripId]);
 
-  const run = async (task: () => Promise<unknown>): Promise<void> => {
+  const run = async (task: () => Promise<unknown>): Promise<boolean> => {
     setBusy(true);
     setActionError(null);
     try {
       await task();
       reload();
+      return true;
     } catch (caught) {
       setActionError(describeError(caught));
+      return false;
     } finally {
       setBusy(false);
     }
@@ -126,7 +135,7 @@ export default function TripMembersScreen() {
                           <MemberRow
                             key={member.id}
                             member={member}
-                            onRename={(id, name) => void run(() => renameTripMember(id, name))}
+                            onRename={(id, name) => run(() => renameTripMember(id, name))}
                           />
                         ))
                       )}
@@ -142,7 +151,7 @@ export default function TripMembersScreen() {
                           <MemberRow
                             key={member.id}
                             member={member}
-                            onRename={(id, name) => void run(() => renameTripMember(id, name))}
+                            onRename={(id, name) => run(() => renameTripMember(id, name))}
                           />
                         ))
                       )}

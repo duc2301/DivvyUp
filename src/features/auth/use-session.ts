@@ -54,6 +54,13 @@ export function useSession() {
       if (cancelled) return;
       setSession(nextSession);
       setLoading(false);
+      // Có phiên thật thì thôi làm khách. Không tắt cờ, app ở trạng thái lai:
+      // menu vẫn hiện "Khách" không có nút Đăng xuất, và mọi dữ liệu vẫn ghi
+      // vào máy thay vì lên tài khoản vừa đăng nhập.
+      if (nextSession !== null) {
+        setIsGuest(false);
+        void AsyncStorage.setItem('divvyup_is_guest', 'false').catch(() => undefined);
+      }
     });
 
     return () => {

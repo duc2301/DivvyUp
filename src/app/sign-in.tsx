@@ -67,9 +67,13 @@ export default function SignInScreen() {
 
   // Thông báo khi quay về từ link trong email.
   const confirmed = firstParam(params.confirmed) === '1';
-  const resetDone = firstParam(params.reset) === '1';
+  const resetParam = firstParam(params.reset);
+  const resetDone = resetParam === '1' || resetParam === 'local';
   useEffect(() => {
-    if (redirect?.errorCode) {
+    // Chỉ tin lỗi trong URL khi màn này được mở ĐÚNG từ link email (có tham số
+    // confirmed/reset). redirect là URL gần nhất đã mở app — không kiểm thì
+    // một link hỏng hôm qua hiện lại lỗi mỗi lần đăng xuất về màn này.
+    if ((confirmed || resetDone) && redirect?.errorCode) {
       setError(describeRedirectError(redirect));
       return;
     }
@@ -81,9 +85,17 @@ export default function SignInScreen() {
       });
     } else if (resetDone) {
       setMode('signIn');
-      setBanner({ tone: 'success', message: 'Đã đổi mật khẩu. Đăng nhập bằng mật khẩu mới.' });
+      setBanner(
+        resetParam === 'local'
+          ? {
+              tone: 'info',
+              message:
+                'Đã đổi mật khẩu, nhưng mất mạng nên chưa đăng xuất được các thiết bị khác. Nếu nghi bị lộ, đăng nhập rồi đổi mật khẩu thêm lần nữa khi có mạng.',
+            }
+          : { tone: 'success', message: 'Đã đổi mật khẩu. Đăng nhập bằng mật khẩu mới.' },
+      );
     }
-  }, [confirmed, resetDone, redirect]);
+  }, [confirmed, resetDone, resetParam, redirect]);
 
   const handleFailure = (caught: unknown): void => {
     if (caught instanceof AuthRateLimitError) startCooldown(caught.retryAfterSeconds);

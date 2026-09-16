@@ -9,12 +9,20 @@
 -- Chạy trong MỘT transaction: lỗi giữa chừng thì không mất gì cả, thay vì để
 -- lại dữ liệu rách kiểu còn khoản chi mà mất chuyến đi.
 --
--- Xoá theo thứ tự con trước cha. Nhiều khoá ngoại có ON DELETE CASCADE nên chỉ
--- xoá `trips` cũng đủ về lý thuyết, nhưng expenses.paid_by và
--- expense_shares.member_id tham chiếu trip_members KHÔNG có cascade — để Postgres
--- tự lo thứ tự cascade giữa hai nhánh đó là chỗ dễ vấp. Viết tường minh thì
--- không phải đoán.
+-- Xoá theo thứ tự con trước cha, và ĐỪNG rút gọn thành `delete from trips`:
+--   - expenses.paid_by và expense_shares.member_id tham chiếu trip_members
+--     KHÔNG có cascade, nên phải xoá khoản chi trước thành viên.
+--   - trip_members phải xoá TRƯỚC trip_groups. Khoá ngoại (group_id, trip_id)
+--     của trip_members là ON DELETE SET NULL trên CẢ HAI cột — xoá nhóm trước
+--     thì Postgres đặt trip_id = null, và trigger protect_trip_member_identity
+--     chặn lại với lỗi "không được chuyển thành viên sang chuyến đi khác".
 --
+-- Chạy SAU các migration 20260916_1040 và 20260917_1000 vẫn được: các trigger
+-- mới chỉ chạy khi INSERT/UPDATE, không chặn DELETE.
+--
+-- SQL Editor có thể chỉ hiện kết quả câu lệnh cuối. Muốn xem số đếm trước/sau,
+-- bôi đen từng câu select rồi chạy riêng.
+
 -- Dữ liệu CHẾ ĐỘ KHÁCH nằm trên điện thoại (AsyncStorage), không nằm ở đây.
 -- Muốn xoá nốt: gỡ app hoặc xoá dữ liệu ứng dụng trong cài đặt máy.
 -- ============================================================================

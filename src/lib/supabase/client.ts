@@ -75,13 +75,26 @@ const rememberLoaded: Promise<void> = (async () => {
   }
 })();
 
+/**
+ * Mã xác minh PKCE luôn vào kho BỀN, bất kể cờ ghi nhớ. Nó được tạo lúc bấm
+ * "Quên mật khẩu" và chỉ dùng khi người dùng quay lại từ hộp thư — lúc đó hệ
+ * điều hành có thể đã đóng hẳn app, bộ nhớ RAM mất sạch, và link đặt lại mật
+ * khẩu không bao giờ dùng được.
+ */
+const isPkceVerifierKey = (key: string): boolean => key.endsWith('code-verifier');
+
 const authStorage: SupportedStorage = {
   async getItem(key) {
     await rememberLoaded;
+    if (isPkceVerifierKey(key)) return durable.getItem(key);
     return remember ? durable.getItem(key) : temporary.getItem(key);
   },
   async setItem(key, value) {
     await rememberLoaded;
+    if (isPkceVerifierKey(key)) {
+      await durable.setItem(key, value);
+      return;
+    }
     if (remember) {
       await durable.setItem(key, value);
       await temporary.removeItem(key);
@@ -120,10 +133,23 @@ export const supabase = createClient<Database>(supabaseUrl, supabaseKey, {
     storage: authStorage,
     persistSession: true,
     autoRefreshToken: true,
-    // TẮT cả trên web. Link xác nhận email và link đặt lại mật khẩu đều mang
-    // token trên URL; để supabase-js tự nuốt thì nó đăng nhập luôn, trong khi
-    // luồng của app là: xác nhận xong → về màn đăng nhập báo thành công, và
-    // link đặt lại mật khẩu → màn nhập mật khẩu mới. Hai màn đó tự đọc URL.
+    // PKCE thay cho implicit. Với implicit, link trong email chở thẳng
+    // access/refresh token trên URL: nằm lại trong lịch sử trình duyệt, và ai
+    // cũng dựng được một link "đặt lại mật khẩu" chứa token tài khoản CỦA HỌ
+    // để lừa người khác bấm vào (login CSRF). PKCE chỉ chở một `code` dùng một
+    // lần, đổi ra phiên được khi có mã xác minh lưu trên ĐÚNG máy đã yêu cầu.
+    flowType: 'pkce',
+    experimental: {
+      // Gắn sb_flow_id vào link trong email, để mỗi email khớp đúng mã xác
+      // minh của NÓ. Thiếu cờ này, mọi link dùng chung một khoá "mã gần nhất":
+      // bấm "Gửi lại" rồi mở email đầu tiên, hoặc bấm một link giả, là xoá mất
+      // mã của lần đặt lại mật khẩu đang chờ — cả hai link đều chết.
+      // Redirect URLs trong dashboard phải dùng wildcard (divvyup://**) vì
+      // tham số này làm đổi URL.
+      appendPkceFlowIdToRedirects: true,
+    },
+    // TẮT cả trên web: màn đăng nhập và màn đặt lại mật khẩu tự đọc URL, vì
+    // luồng của app khác mặc định (xác nhận email xong KHÔNG tự đăng nhập).
     detectSessionInUrl: false,
   },
 });

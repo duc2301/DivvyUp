@@ -56,7 +56,12 @@ export default function TripPlaceScreen() {
     // mà query là dependency của effect này — thiếu chốt chặn thì 400ms sau
     // danh sách kết quả tự bật lại, đẩy khối ảnh bìa tụt xuống đúng lúc ngón
     // tay đang chạm, và tốn thêm một lượt gọi Mapbox hoàn toàn thừa.
-    if (place !== null) return;
+    if (place !== null) {
+      // Chọn kết quả đúng lúc một lượt tìm khác đang chạy: cleanup của lượt đó
+      // đã chặn `finally` tắt cờ, nên phải tắt ở đây, không thì "Đang tìm…" kẹt.
+      setSearching(false);
+      return;
+    }
 
     const trimmed = query.trim();
     if (trimmed.length < 2) {
@@ -131,6 +136,13 @@ export default function TripPlaceScreen() {
       });
   };
 
+  // Mở thẳng bằng link thì không có màn phía sau để back() về.
+  const leave = (): void => {
+    if (router.canGoBack()) router.back();
+    else if (tripId) router.replace({ pathname: '/trip/[tripId]/overview', params: { tripId } });
+    else router.replace('/');
+  };
+
   const save = async (): Promise<void> => {
     if (!tripId) return;
     setSaving(true);
@@ -164,7 +176,7 @@ export default function TripPlaceScreen() {
       const nextCover: TripCoverGallery = { images, index: chosenIndex };
 
       await updateTripPlace(tripId, nextPlace, nextCover);
-      router.back();
+      leave();
     } catch (caught) {
       setSaveError(describeError(caught));
     } finally {
@@ -178,7 +190,7 @@ export default function TripPlaceScreen() {
     setSaveError(null);
     try {
       await updateTripPlace(tripId, null, { images: [], index: 0 });
-      router.back();
+      leave();
     } catch (caught) {
       setSaveError(describeError(caught));
     } finally {
@@ -287,7 +299,9 @@ export default function TripPlaceScreen() {
       <Button
         label="Lưu địa điểm"
         onPress={() => void save()}
-        disabled={place === null || saving}
+        // Khoá khi ảnh còn đang tải: lưu lúc đó là lưu bộ ảnh rỗng, chuyến có
+        // địa điểm mà không có ảnh bìa.
+        disabled={place === null || saving || loadingPhotos}
         busy={saving}
       />
 

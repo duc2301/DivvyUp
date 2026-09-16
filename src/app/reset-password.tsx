@@ -1,5 +1,5 @@
 import { useRouter } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 
 import { AppHeader } from '@/components/ui/app-header';
 import { Button } from '@/components/ui/button';
@@ -8,7 +8,6 @@ import { ErrorView, LoadingView } from '@/components/ui/state-views';
 import { TextField } from '@/components/ui/text-field';
 import { completePasswordReset, startPasswordRecovery } from '@/features/auth/auth-actions';
 import { describeRedirectError } from '@/features/auth/auth-redirect';
-import { useSessionContext } from '@/features/auth/session-context';
 import { useAuthRedirect } from '@/features/auth/use-auth-redirect';
 import { describeError } from '@/lib/data/use-async';
 
@@ -17,7 +16,6 @@ type Phase = 'checking' | 'ready' | 'invalid';
 export default function ResetPasswordScreen() {
   const router = useRouter();
   const redirect = useAuthRedirect();
-  const { session, loading: sessionLoading } = useSessionContext();
 
   const [phase, setPhase] = useState<Phase>('checking');
   const [password, setPassword] = useState('');
@@ -25,51 +23,38 @@ export default function ResetPasswordScreen() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (sessionLoading) return;
-    let cancelled = false;
+  // Mã PKCE chỉ dùng được MỘT lần: đổi lần hai thì thất bại và ghi đè trạng
+  // thái "sẵn sàng" của lần một bằng lỗi. Ref chốt lại mã đã đổi.
+  const exchangedCode = useRef<string | null>(null);
 
+  useEffect(() => {
     if (redirect?.errorCode) {
       setError(describeRedirectError(redirect));
       setPhase('invalid');
       return;
     }
 
-    if (redirect?.accessToken && redirect.refreshToken) {
-      startPasswordRecovery(redirect.accessToken, redirect.refreshToken)
-        .then(() => {
-          if (!cancelled) setPhase('ready');
-        })
-        .catch((caught: unknown) => {
-          if (cancelled) return;
-          setError(describeError(caught));
-          setPhase('invalid');
-        });
-    } else if (session !== null) {
-      // Đã dựng phiên từ lần render trước (hash đã bị xoá khỏi URL), hoặc người
-      // dùng đang đăng nhập sẵn — cả hai đều đổi được mật khẩu.
-      setPhase('ready');
-    } else {
-      // Linking.useURL trả null ở nhịp đầu rồi mới có giá trị. Chờ thêm một chút
-      // trước khi kết luận link hỏng, không thì màn hình chớp lỗi oan.
-      const timer = setTimeout(() => {
-        if (cancelled) return;
-        setError('Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu gửi lại email mới.');
-        setPhase('invalid');
-      }, 1500);
-      return () => {
-        cancelled = true;
-        clearTimeout(timer);
-      };
+    const code = redirect?.code ?? null;
+    if (code === null) {
+      // Không có mã thì không có gì để xác minh. KHÔNG mở ô đổi mật khẩu chỉ vì
+      // máy đang đăng nhập sẵn: link hỏng mà vẫn hiện ô nhập, người dùng sẽ đổi
+      // nhầm mật khẩu của tài khoản đang đăng nhập thay vì tài khoản trong email.
+      setError('Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu gửi lại email mới.');
+      setPhase('invalid');
+      return;
     }
+    if (exchangedCode.current === code) return;
+    exchangedCode.current = code;
 
-    return () => {
-      cancelled = true;
-    };
-    // session chỉ dùng để quyết định lúc không có token — không cần chạy lại
-    // mỗi khi phiên đổi, vì chính startPasswordRecovery làm phiên đổi.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [redirect, sessionLoading]);
+    // Không dùng cờ huỷ: ref đã chặn lượt chạy lại, nên nếu lượt đầu bị huỷ thì
+    // không ai còn đặt phase và màn hình kẹt ở "Đang kiểm tra link…".
+    startPasswordRecovery(code, redirect?.flowId ?? null)
+      .then(() => setPhase('ready'))
+      .catch((caught: unknown) => {
+        setError(describeError(caught));
+        setPhase('invalid');
+      });
+  }, [redirect]);
 
   const mismatch = confirm !== '' && confirm !== password;
   const canSubmit = password.length >= 6 && confirm === password;
@@ -78,8 +63,11 @@ export default function ResetPasswordScreen() {
     setBusy(true);
     setError(null);
     try {
-      await completePasswordReset(password);
-      router.replace({ pathname: '/sign-in', params: { reset: '1' } });
+      const { otherDevicesSignedOut } = await completePasswordReset(password);
+      router.replace({
+        pathname: '/sign-in',
+        params: { reset: otherDevicesSignedOut ? '1' : 'local' },
+      });
     } catch (caught) {
       setError(describeError(caught));
     } finally {

@@ -263,17 +263,33 @@ export async function updateTripPlace(
   place: TripPlace | null,
   cover: TripCoverGallery | null,
 ): Promise<void> {
-  unwrapVoid(await supabase.from('trips').update(placeColumns(place, cover)).eq('id', tripId));
+  const rows = unwrap(
+    await supabase.from('trips').update(placeColumns(place, cover)).eq('id', tripId).select('id'),
+  );
+  assertTripUpdated(rows);
+}
+
+/**
+ * RLS chỉ cho chủ chuyến sửa bảng trips. Người khác sửa thì PostgREST KHÔNG báo
+ * lỗi — nó lọc hết dòng và trả về thành công với 0 dòng. Không kiểm số dòng,
+ * thành viên thường chọn địa điểm xong thấy "đã lưu", mở lại vẫn là cũ.
+ */
+function assertTripUpdated(rows: readonly unknown[]): void {
+  if (rows.length === 0) {
+    throw new DataError('Chỉ chủ chuyến đi mới đổi được địa điểm và ảnh bìa.', '42501');
+  }
 }
 
 /** Đổi riêng ảnh đang hiển thị, không đụng tới danh sách hay địa điểm. */
 export async function updateCoverIndex(tripId: string, index: number): Promise<void> {
-  unwrapVoid(
+  const rows = unwrap(
     await supabase
       .from('trips')
       .update({ cover_image_index: Math.max(0, index) })
-      .eq('id', tripId),
+      .eq('id', tripId)
+      .select('id'),
   );
+  assertTripUpdated(rows);
 }
 
 export async function listTripGroups(tripId: string): Promise<TripGroup[]> {

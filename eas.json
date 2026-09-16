@@ -5,6 +5,7 @@
   },
   "build": {
     "development": {
+      "channel": "development",
       "developmentClient": true,
       "distribution": "internal",
       "env": {
@@ -16,6 +17,8 @@
       }
     },
     "preview": {
+      "channel": "preview",
+      "autoIncrement": true,
       "distribution": "internal",
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://lzismouvqkxnombzplvr.supabase.co",
@@ -26,6 +29,7 @@
       }
     },
     "production": {
+      "channel": "production",
       "autoIncrement": true,
       "env": {
         "EXPO_PUBLIC_SUPABASE_URL": "https://lzismouvqkxnombzplvr.supabase.co",

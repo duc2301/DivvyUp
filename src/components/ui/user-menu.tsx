@@ -82,6 +82,10 @@ export function UserMenu() {
     setSigningOut(true);
     try {
       await signOut();
+    } catch {
+      // Cả đăng xuất cục bộ cũng lỗi (kho lưu trữ hỏng): không có gì để làm
+      // thêm; AuthGate vẫn giữ nguyên nếu phiên còn. Nuốt lỗi để không có
+      // promise bị reject mà không ai bắt.
     } finally {
       setSigningOut(false);
       // Không cần điều hướng: AuthGate thấy phiên mất sẽ tự đưa về màn đăng nhập.

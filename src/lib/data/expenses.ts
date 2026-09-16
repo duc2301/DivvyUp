@@ -50,7 +50,7 @@ export interface SaveExpenseInput {
  * để báo lỗi tức thì cho người dùng, không tốn một vòng mạng. DB vẫn kiểm lại
  * trong RPC và một lần nữa bằng constraint trigger lúc COMMIT.
  */
-function assertSharesBalance(input: SaveExpenseInput): void {
+export function assertSharesBalance(input: SaveExpenseInput): void {
   if (input.description.trim() === '') {
     throw new DataError('Khoản chi cần có mô tả.');
   }
@@ -59,6 +59,13 @@ function assertSharesBalance(input: SaveExpenseInput): void {
   }
   if (input.shares.length === 0) {
     throw new DataError('Phải có ít nhất một người gánh khoản chi.');
+  }
+  if (input.shares.some((share) => share.amount.minor < 0)) {
+    throw new DataError('Phần chia của một người không được âm.');
+  }
+  const ids = new Set(input.shares.map((share) => share.participantId));
+  if (ids.size !== input.shares.length) {
+    throw new DataError('Một người xuất hiện hai lần trong khoản chi.');
   }
 
   // sumMoney tự ném lỗi nếu danh sách lẫn đơn vị tiền tệ.
@@ -137,6 +144,9 @@ export async function listExpenses(
       .eq('trip_id', tripId)
       .is('deleted_at', null)
       .order('paid_at', { ascending: false })
+      // Khoá phụ bắt buộc cho phân trang offset: paid_at chỉ tới phút nên hay
+      // trùng, thiếu thứ tự xác định thì một khoản có thể lặp hoặc mất giữa hai trang.
+      .order('id', { ascending: true })
       .range(offset, offset + limit - 1),
   );
 
