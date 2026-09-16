@@ -50,6 +50,18 @@ export interface Database {
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
+          // Điểm đến, lấy từ Mapbox qua Edge Function place-search.
+          place_name: string | null;
+          place_address: string | null;
+          place_country: string | null;
+          latitude: number | null;
+          longitude: number | null;
+          place_provider: string | null;
+          place_external_id: string | null;
+          cover_image_url: string | null;
+          cover_image_credit: string | null;
+          cover_image_link: string | null;
+          cover_image_provider: string | null;
         };
         Insert: {
           id?: string;
@@ -58,12 +70,34 @@ export interface Database {
           start_date?: string | null;
           end_date?: string | null;
           created_by: string;
+          place_name?: string | null;
+          place_address?: string | null;
+          place_country?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          place_provider?: string | null;
+          place_external_id?: string | null;
+          cover_image_url?: string | null;
+          cover_image_credit?: string | null;
+          cover_image_link?: string | null;
+          cover_image_provider?: string | null;
         };
         Update: {
           name?: string;
           start_date?: string | null;
           end_date?: string | null;
           deleted_at?: string | null;
+          place_name?: string | null;
+          place_address?: string | null;
+          place_country?: string | null;
+          latitude?: number | null;
+          longitude?: number | null;
+          place_provider?: string | null;
+          place_external_id?: string | null;
+          cover_image_url?: string | null;
+          cover_image_credit?: string | null;
+          cover_image_link?: string | null;
+          cover_image_provider?: string | null;
         };
         Relationships: [
           {

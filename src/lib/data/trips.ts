@@ -12,8 +12,27 @@
 import type { CurrencyCode } from '@/lib/money';
 import { isCurrencyCode } from '@/lib/money';
 import { supabase } from '@/lib/supabase/client';
-import type { TripRole } from '@/lib/supabase/database.types';
+import type { Database, TripRole } from '@/lib/supabase/database.types';
 import { DataError, unwrap, unwrapVoid } from '@/lib/supabase/errors';
+
+/** Điểm đến của chuyến đi, chọn từ Mapbox. */
+export interface TripPlace {
+  readonly name: string;
+  readonly address: string | null;
+  readonly country: string | null;
+  readonly latitude: number | null;
+  readonly longitude: number | null;
+  readonly provider: string | null;
+  readonly externalId: string | null;
+}
+
+/** Ảnh bìa. credit và link là BẮT BUỘC hiển thị khi nguồn là Unsplash. */
+export interface TripCoverImage {
+  readonly url: string;
+  readonly credit: string | null;
+  readonly link: string | null;
+  readonly provider: string | null;
+}
 
 export interface TripSummary {
   readonly id: string;
@@ -22,6 +41,9 @@ export interface TripSummary {
   readonly startDate: string | null;
   readonly endDate: string | null;
   readonly joinCode: string;
+  /** Gom 11 cột phẳng ở DB thành hai object: màn hình chỉ cần hỏi "có hay không". */
+  readonly place: TripPlace | null;
+  readonly coverImage: TripCoverImage | null;
 }
 
 export interface TripGroup {
@@ -61,16 +83,34 @@ async function requireUserId(): Promise<string> {
   return userId;
 }
 
-const TRIP_COLUMNS = 'id, name, currency, start_date, end_date, join_code';
+// PHẢI là một chuỗi literal duy nhất, KHÔNG nối bằng dấu +.
+// supabase-js đọc chuỗi select như một kiểu literal để suy ra hình dạng dòng
+// trả về; nối chuỗi lúc chạy thì nó mất kiểu và mọi thứ thành GenericStringError.
+// prettier-ignore
+const TRIP_COLUMNS = 'id, name, currency, start_date, end_date, join_code, place_name, place_address, place_country, latitude, longitude, place_provider, place_external_id, cover_image_url, cover_image_credit, cover_image_link, cover_image_provider';
 
-function toTripSummary(row: {
-  id: string;
-  name: string;
-  currency: string;
-  start_date: string | null;
-  end_date: string | null;
-  join_code: string;
-}): TripSummary {
+type TripRow = Database['public']['Tables']['trips']['Row'];
+
+function toTripSummary(row: Pick<
+  TripRow,
+  | 'id'
+  | 'name'
+  | 'currency'
+  | 'start_date'
+  | 'end_date'
+  | 'join_code'
+  | 'place_name'
+  | 'place_address'
+  | 'place_country'
+  | 'latitude'
+  | 'longitude'
+  | 'place_provider'
+  | 'place_external_id'
+  | 'cover_image_url'
+  | 'cover_image_credit'
+  | 'cover_image_link'
+  | 'cover_image_provider'
+>): TripSummary {
   return {
     id: row.id,
     name: row.name,
@@ -78,6 +118,27 @@ function toTripSummary(row: {
     startDate: row.start_date,
     endDate: row.end_date,
     joinCode: row.join_code,
+    // place_name là cột quyết định: không có tên thì coi như chưa chọn điểm đến,
+    // dù các cột khác có sót giá trị cũ.
+    place: row.place_name
+      ? {
+          name: row.place_name,
+          address: row.place_address,
+          country: row.place_country,
+          latitude: row.latitude,
+          longitude: row.longitude,
+          provider: row.place_provider,
+          externalId: row.place_external_id,
+        }
+      : null,
+    coverImage: row.cover_image_url
+      ? {
+          url: row.cover_image_url,
+          credit: row.cover_image_credit,
+          link: row.cover_image_link,
+          provider: row.cover_image_provider,
+        }
+      : null,
   };
 }
 
@@ -110,6 +171,26 @@ export interface CreateTripInput {
   readonly currency: CurrencyCode;
   readonly startDate?: string | null;
   readonly endDate?: string | null;
+  /** Điểm đến chọn từ màn tìm địa điểm. Để trống thì chọn sau cũng được. */
+  readonly place?: TripPlace | null;
+  readonly coverImage?: TripCoverImage | null;
+}
+
+/** Trải hai object địa điểm thành các cột phẳng mà DB dùng. */
+function placeColumns(place?: TripPlace | null, coverImage?: TripCoverImage | null) {
+  return {
+    place_name: place?.name ?? null,
+    place_address: place?.address ?? null,
+    place_country: place?.country ?? null,
+    latitude: place?.latitude ?? null,
+    longitude: place?.longitude ?? null,
+    place_provider: place?.provider ?? null,
+    place_external_id: place?.externalId ?? null,
+    cover_image_url: coverImage?.url ?? null,
+    cover_image_credit: coverImage?.credit ?? null,
+    cover_image_link: coverImage?.link ?? null,
+    cover_image_provider: coverImage?.provider ?? null,
+  };
 }
 
 export async function createTrip(input: CreateTripInput): Promise<string> {
@@ -134,6 +215,7 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
         start_date: input.startDate ?? null,
         end_date: input.endDate ?? null,
         created_by: createdBy,
+        ...placeColumns(input.place, input.coverImage),
       })
       .select('id'),
   );
@@ -143,6 +225,26 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
     throw new DataError('Tạo chuyến đi không thành công.');
   }
   return created.id;
+}
+
+/**
+ * Đổi điểm đến và ảnh bìa của chuyến đi đã tạo.
+ *
+ * Truyền null cho cả hai để gỡ bỏ. Ghi cả 11 cột mỗi lần thay vì chỉ ghi cột
+ * đổi: bỏ sót một cột sẽ để lại mảnh dữ liệu của địa điểm cũ lẫn vào địa điểm
+ * mới — kiểu lỗi rất khó nhìn ra vì màn hình vẫn hiện bình thường.
+ */
+export async function updateTripPlace(
+  tripId: string,
+  place: TripPlace | null,
+  coverImage: TripCoverImage | null,
+): Promise<void> {
+  unwrapVoid(
+    await supabase
+      .from('trips')
+      .update(placeColumns(place, coverImage))
+      .eq('id', tripId),
+  );
 }
 
 export async function listTripGroups(tripId: string): Promise<TripGroup[]> {

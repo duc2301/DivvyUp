@@ -21,5 +21,17 @@
     ".expo/types/**/*.ts",
     "expo-env.d.ts",
     "nativewind-env.d.ts"
+  ],
+  // Edge Function chạy trên Deno với API và kiểu hoàn toàn khác React Native.
+  // Để tsc của app kiểm chúng thì lúc nào cũng báo "Cannot find name 'Deno'".
+  // Chúng được kiểm riêng bằng: npx supabase functions serve
+  "exclude": [
+    "node_modules",
+    "supabase/functions",
+    "babel.config.js",
+    "metro.config.js",
+    "android",
+    "ios",
+    "dist"
   ]
 }

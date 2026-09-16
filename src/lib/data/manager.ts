@@ -25,8 +25,10 @@ import type {
 import * as remoteExpenses from './expenses';
 import type {
   CreateTripInput,
+  TripCoverImage,
   TripGroup,
   TripMember,
+  TripPlace,
   TripPreview,
   TripSummary,
 } from './trips';
@@ -76,6 +78,8 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
       // Chuỗi rỗng là CỐ Ý: chuyến đi cục bộ không tồn tại trên server nên
       // không ai tham gia bằng mã được. Màn hình ẩn thẻ "Mã mời" khi rỗng.
       joinCode: '',
+      place: input.place ?? null,
+      coverImage: input.coverImage ?? null,
       createdAt: now,
       updatedAt: now,
     };
@@ -83,6 +87,20 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
     return trip.id;
   }
   return remoteTrips.createTrip(input);
+}
+
+export async function updateTripPlace(
+  tripId: string,
+  place: TripPlace | null,
+  coverImage: TripCoverImage | null,
+): Promise<void> {
+  if (await isGuestMode()) {
+    const trip = (await localStore.listTrips()).find((item) => item.id === tripId);
+    if (!trip) throw new DataError('Không tìm thấy chuyến đi trong dữ liệu cục bộ.');
+    await localStore.saveTrip({ ...trip, place, coverImage, updatedAt: new Date().toISOString() });
+    return;
+  }
+  await remoteTrips.updateTripPlace(tripId, place, coverImage);
 }
 
 export async function listTripGroups(tripId: string): Promise<TripGroup[]> {

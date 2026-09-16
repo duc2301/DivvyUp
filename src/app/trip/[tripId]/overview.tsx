@@ -1,23 +1,47 @@
 import { useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { useCallback, useState } from 'react';
+import { Pressable, ScrollView, Text, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { AppHeader } from '@/components/ui/app-header';
 import { Button } from '@/components/ui/button';
-import { Screen } from '@/components/ui/screen';
-import { SectionCard } from '@/components/ui/section-card';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
+import { TripHero } from '@/components/ui/trip-hero';
 import { getTrip, getTripBalances, listExpenses, listTripMembers } from '@/lib/data/manager';
 import { useAsync } from '@/lib/data/use-async';
 import { formatRelativeDateTime } from '@/lib/datetime';
-import { formatMoney, simplifyDebts } from '@/lib/money';
+import { formatMoney, money, simplifyDebts, sumMoney } from '@/lib/money';
+
+type Tab = 'expenses' | 'balances' | 'members';
+
+const TABS = [
+  { value: 'expenses' as const, label: 'Khoản chi' },
+  { value: 'balances' as const, label: 'Số dư' },
+  { value: 'members' as const, label: 'Thành viên' },
+];
+
+/** Số ngày của chuyến, tính cả ngày đầu và ngày cuối. */
+function tripDayCount(startDate: string | null, endDate: string | null): number | null {
+  if (!startDate || !endDate) return null;
+  const toLocal = (value: string): Date => {
+    const [year, month, day] = value.split('-').map(Number);
+    return new Date(year, month - 1, day);
+  };
+  const days = Math.round(
+    (toLocal(endDate).getTime() - toLocal(startDate).getTime()) / 86_400_000,
+  );
+  return days >= 0 ? days + 1 : null;
+}
 
 export default function TripScreen() {
   const router = useRouter();
+  const insets = useSafeAreaInsets();
   // useLocalSearchParams luôn trả string | string[] | undefined — không được
   // coi mặc định là string.
   const params = useLocalSearchParams<{ tripId?: string | string[] }>();
   const tripId = Array.isArray(params.tripId) ? params.tripId[0] : params.tripId;
+
+  const [tab, setTab] = useState<Tab>('expenses');
 
   const { data, error, loading, reload } = useAsync(async () => {
     if (!tripId) throw new Error('Thiếu mã chuyến đi.');
@@ -42,162 +66,263 @@ export default function TripScreen() {
   const transfers = data ? simplifyDebts(data.balances) : [];
   const hasMembers = (data?.members.length ?? 0) > 0;
 
+  // Tổng chi của cả chuyến. Cộng qua sumMoney chứ không cộng số trần: nó chặn
+  // sẵn việc lẫn hai đơn vị tiền tệ.
+  const totalSpent = data
+    ? sumMoney(
+        data.expenses.map((expense) => expense.total),
+        data.trip.currency,
+      )
+    : money(0, 'VND');
+
+  const dayCount = data ? tripDayCount(data.trip.startDate, data.trip.endDate) : null;
+
+  const goToPlace = (): void => {
+    if (!tripId) return;
+    router.push({ pathname: '/trip/[tripId]/place', params: { tripId } });
+  };
+
   return (
-    <>
-      <Screen
-        header={
-          <AppHeader
-            title={data?.trip.name ?? 'Chuyến đi'}
-            subtitle={data && data.trip.joinCode !== '' ? `Mã mời ${data.trip.joinCode}` : undefined}
-            showBack
-          />
-        }>
-        {loading && data === null ? <LoadingView /> : null}
-        {error ? <ErrorView message={error} onRetry={reload} /> : null}
+    <View className="flex-1 bg-background">
+      <ScrollView
+        className="flex-1"
+        contentContainerStyle={{ paddingBottom: insets.bottom + 96 }}
+        keyboardShouldPersistTaps="handled">
+        <TripHero
+          imageUrl={data?.trip.coverImage?.url ?? null}
+          imageCredit={data?.trip.coverImage?.credit ?? null}
+          imageLink={data?.trip.coverImage?.link ?? null}
+          onEditPlace={goToPlace}
+        />
 
-        {data ? (
-          <>
-            <View className="flex-row gap-3">
-              <View className="min-w-0 flex-1">
-                <Button
-                  label="＋ Khoản chi"
-                  onPress={() =>
-                    router.push({
-                      pathname: '/trip/[tripId]/expense-new',
-                      params: { tripId: data.trip.id },
-                    })
-                  }
-                  disabled={!hasMembers}
+        {/* Thẻ đè lên ảnh — chi tiết tạo nên bố cục trong thiết kế mẫu. */}
+        <View className="-mt-7 rounded-t-3xl bg-background px-4 pt-5">
+          {loading && data === null ? <LoadingView /> : null}
+          {error ? <ErrorView message={error} onRetry={reload} /> : null}
+
+          {data ? (
+            <>
+              <View className="flex-row items-start justify-between gap-3">
+                <View className="min-w-0 flex-1">
+                  <Text className="font-display text-3xl leading-tight text-foreground">
+                    {data.trip.name}
+                  </Text>
+                  <Text className="mt-1 text-sm text-muted-foreground">
+                    {data.trip.place
+                      ? `📍 ${data.trip.place.name}${
+                          data.trip.place.country ? `, ${data.trip.place.country}` : ''
+                        }`
+                      : 'Chưa chọn địa điểm'}
+                  </Text>
+                </View>
+
+                <View className="items-end">
+                  <Text numberOfLines={1} className="text-xl font-bold text-primary">
+                    {formatMoney(totalSpent)}
+                  </Text>
+                  <Text className="text-xs text-muted-foreground">tổng chi</Text>
+                </View>
+              </View>
+
+              <View className="mt-3 flex-row flex-wrap gap-2">
+                <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                  {data.members.length} người
+                </Text>
+                {dayCount ? (
+                  <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                    {dayCount} ngày
+                  </Text>
+                ) : null}
+                <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                  {data.trip.currency}
+                </Text>
+                {data.trip.joinCode !== '' ? (
+                  <Text className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-foreground">
+                    Mã {data.trip.joinCode}
+                  </Text>
+                ) : (
+                  <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
+                    Lưu cục bộ
+                  </Text>
+                )}
+              </View>
+
+              <View className="mt-5">
+                <SegmentedControl
+                  options={TABS}
+                  value={tab}
+                  onChange={setTab}
+                  accessibilityLabel="Chọn nội dung hiển thị"
                 />
               </View>
-              <View className="min-w-0 flex-1">
-                <Button
-                  label="Thành viên"
-                  variant="secondary"
-                  onPress={() =>
-                    router.push({
-                      pathname: '/trip/[tripId]/members',
-                      params: { tripId: data.trip.id },
-                    })
-                  }
-                />
-              </View>
-            </View>
 
-            <SectionCard title="Số dư" hint="Dương là được nhận lại, âm là đang nợ.">
-              {data.balances.length === 0 ? (
-                <Text className="text-sm text-muted-foreground">Chưa có thành viên nào.</Text>
-              ) : (
-                data.balances.map((balance) => (
-                  <View
-                    key={balance.participantId}
-                    className="flex-row items-center justify-between py-2">
-                    <Text className="min-w-0 flex-1 text-base text-foreground">
-                      {balance.displayName}
-                    </Text>
-                    {/* Không chỉ dựa vào màu: dấu +/− là thứ người mù màu đọc được. */}
-                    <Text
-                      numberOfLines={1}
-                      className={`pl-3 text-base font-semibold ${
-                        balance.net.minor > 0
-                          ? 'text-positive'
-                          : balance.net.minor < 0
-                            ? 'text-negative'
-                            : 'text-muted-foreground'
-                      }`}>
-                      {balance.net.minor === 0
-                        ? '0'
-                        : formatMoney(balance.net, { signDisplay: 'always' })}
-                    </Text>
-                  </View>
-                ))
-              )}
-            </SectionCard>
+              <View className="mt-4 gap-3">
+                {tab === 'expenses' ? (
+                  data.expenses.length === 0 ? (
+                    <EmptyView
+                      title="Chưa có khoản chi nào"
+                      hint={
+                        hasMembers
+                          ? 'Bấm nút bên dưới để ghi khoản đầu tiên.'
+                          : 'Thêm thành viên trước đã.'
+                      }
+                    />
+                  ) : (
+                    data.expenses.map((expense) => (
+                      <Pressable
+                        key={expense.id}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Sửa khoản chi ${expense.description}`}
+                        onPress={() =>
+                          router.push({
+                            pathname: '/trip/[tripId]/expense-new',
+                            params: { tripId: data.trip.id, expenseId: expense.id },
+                          })
+                        }
+                        className="rounded-2xl border border-border bg-card p-4 active:bg-muted">
+                        <View className="flex-row items-start justify-between gap-3">
+                          <Text className="min-w-0 flex-1 text-base font-medium text-foreground">
+                            {expense.description}
+                          </Text>
+                          <Text
+                            numberOfLines={1}
+                            className="text-base font-semibold text-foreground">
+                            {formatMoney(expense.total)}
+                          </Text>
+                        </View>
+                        <View className="mt-1 flex-row items-center justify-between">
+                          <Text className="min-w-0 flex-1 text-xs text-muted-foreground">
+                            {nameOf(expense.paidByMemberId)} ứng ·{' '}
+                            {formatRelativeDateTime(new Date(expense.paidAt))}
+                          </Text>
+                          <Text className="pl-2 text-xs font-medium text-accent-strong">Sửa ›</Text>
+                        </View>
+                      </Pressable>
+                    ))
+                  )
+                ) : null}
 
-            {transfers.length > 0 ? (
-              <SectionCard title="Ai trả ai" hint="Đã tối giản số lần chuyển tiền.">
-                {transfers.map((transfer, index) => (
-                  <View
-                    key={`${transfer.from}-${transfer.to}-${index}`}
-                    className="flex-row items-center justify-between py-2">
-                    <Text className="min-w-0 flex-1 text-base text-foreground">
-                      {nameOf(transfer.from)} → {nameOf(transfer.to)}
-                    </Text>
-                    <Text numberOfLines={1} className="pl-3 text-base font-semibold text-foreground">
-                      {formatMoney(transfer.amount)}
-                    </Text>
-                  </View>
-                ))}
-              </SectionCard>
-            ) : null}
-
-            <SectionCard title="Khoản chi" hint="Chạm vào một dòng để sửa hoặc huỷ.">
-              {data.expenses.length === 0 ? (
-                <EmptyView
-                  title="Chưa có khoản chi nào"
-                  hint={
-                    hasMembers
-                      ? 'Bấm "＋ Khoản chi" để ghi khoản đầu tiên.'
-                      : 'Thêm thành viên trước đã.'
-                  }
-                />
-              ) : (
-                data.expenses.map((expense) => (
-                  <Pressable
-                    key={expense.id}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Sửa khoản chi ${expense.description}`}
-                    onPress={() =>
-                      router.push({
-                        pathname: '/trip/[tripId]/expense-new',
-                        params: { tripId: data.trip.id, expenseId: expense.id },
-                      })
-                    }
-                    className="rounded-2xl px-2 py-3 active:bg-muted">
-                    <View className="flex-row items-start justify-between gap-3">
-                      <Text className="min-w-0 flex-1 text-base font-medium text-foreground">
-                        {expense.description}
+                {tab === 'balances' ? (
+                  <>
+                    <View className="rounded-2xl border border-border bg-card p-4">
+                      <Text className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                        Số dư
                       </Text>
-                      <Text numberOfLines={1} className="text-base font-semibold text-foreground">
-                        {formatMoney(expense.total)}
-                      </Text>
+                      {data.balances.length === 0 ? (
+                        <Text className="text-sm text-muted-foreground">Chưa có thành viên nào.</Text>
+                      ) : (
+                        data.balances.map((balance) => (
+                          <View
+                            key={balance.participantId}
+                            className="flex-row items-center justify-between py-2">
+                            <Text className="min-w-0 flex-1 text-base text-foreground">
+                              {balance.displayName}
+                            </Text>
+                            {/* Không chỉ dựa vào màu: dấu +/− là thứ người mù màu đọc được. */}
+                            <Text
+                              numberOfLines={1}
+                              className={`pl-3 text-base font-semibold ${
+                                balance.net.minor > 0
+                                  ? 'text-positive'
+                                  : balance.net.minor < 0
+                                    ? 'text-negative'
+                                    : 'text-muted-foreground'
+                              }`}>
+                              {balance.net.minor === 0
+                                ? '0'
+                                : formatMoney(balance.net, { signDisplay: 'always' })}
+                            </Text>
+                          </View>
+                        ))
+                      )}
                     </View>
-                    <View className="mt-1 flex-row items-center justify-between">
-                      <Text className="min-w-0 flex-1 text-xs text-muted-foreground">
-                        {nameOf(expense.paidByMemberId)} ứng ·{' '}
-                        {formatRelativeDateTime(new Date(expense.paidAt))}
-                      </Text>
-                      <View className="flex-row items-center gap-1 pl-2">
-                        <Text className="text-xs font-medium text-accent-strong">Sửa</Text>
-                        <Text className="text-xs text-accent-strong">›</Text>
+
+                    {transfers.length > 0 ? (
+                      <View className="rounded-2xl border border-border bg-card p-4">
+                        <Text className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+                          Ai trả ai
+                        </Text>
+                        {transfers.map((transfer, index) => (
+                          <View
+                            key={`${transfer.from}-${transfer.to}-${index}`}
+                            className="flex-row items-center justify-between py-2">
+                            <Text className="min-w-0 flex-1 text-base text-foreground">
+                              {nameOf(transfer.from)} → {nameOf(transfer.to)}
+                            </Text>
+                            <Text
+                              numberOfLines={1}
+                              className="pl-3 text-base font-semibold text-foreground">
+                              {formatMoney(transfer.amount)}
+                            </Text>
+                          </View>
+                        ))}
                       </View>
-                    </View>
-                  </Pressable>
-                ))
-              )}
-            </SectionCard>
+                    ) : null}
+                  </>
+                ) : null}
 
-            {/* Chuyến đi tạo ở chế độ khách chỉ nằm trên máy này nên không có
-                mã mời. Hiện một thẻ rỗng sẽ khiến người dùng tưởng app lỗi. */}
-            {data.trip.joinCode === '' ? (
-              <SectionCard title="Lưu cục bộ">
-                <Text className="text-sm leading-5 text-muted-foreground">
-                  Chuyến đi này chỉ nằm trên máy bạn. Đăng nhập để đồng bộ và mời người khác cùng
-                  ghi chi tiêu.
-                </Text>
-              </SectionCard>
-            ) : (
-              <SectionCard
-                title="Mã mời"
-                hint="Gửi mã này để người khác nhận tên của họ trong chuyến.">
-                <Text className="font-display text-3xl tracking-widest text-foreground">
-                  {data.trip.joinCode}
-                </Text>
-              </SectionCard>
-            )}
-          </>
-        ) : null}
-      </Screen>
-    </>
+                {tab === 'members' ? (
+                  <>
+                    <View className="rounded-2xl border border-border bg-card p-4">
+                      {data.members.length === 0 ? (
+                        <Text className="text-sm text-muted-foreground">Chưa có ai.</Text>
+                      ) : (
+                        data.members.map((member) => (
+                          <View
+                            key={member.id}
+                            className="flex-row items-center justify-between py-2">
+                            <Text className="min-w-0 flex-1 text-base text-foreground">
+                              {member.displayName}
+                            </Text>
+                            {member.isMe ? (
+                              <Text className="rounded-lg bg-accent px-2 py-1 text-xs font-semibold text-accent-foreground">
+                                bạn
+                              </Text>
+                            ) : member.claimed ? (
+                              <Text className="rounded-lg bg-muted px-2 py-1 text-xs text-muted-foreground">
+                                đã vào app
+                              </Text>
+                            ) : null}
+                          </View>
+                        ))
+                      )}
+                    </View>
+
+                    <Button
+                      label="Quản lý thành viên & nhóm"
+                      variant="secondary"
+                      onPress={() =>
+                        router.push({
+                          pathname: '/trip/[tripId]/members',
+                          params: { tripId: data.trip.id },
+                        })
+                      }
+                    />
+                  </>
+                ) : null}
+              </View>
+            </>
+          ) : null}
+        </View>
+      </ScrollView>
+
+      {/* Thanh hành động dính đáy — vị trí nút "Book Now" trong thiết kế mẫu. */}
+      {data ? (
+        <View
+          style={{ paddingBottom: insets.bottom + 12 }}
+          className="absolute inset-x-0 bottom-0 border-t border-border bg-background px-4 pt-3">
+          <Button
+            label="＋ Khoản chi"
+            onPress={() =>
+              router.push({
+                pathname: '/trip/[tripId]/expense-new',
+                params: { tripId: data.trip.id },
+              })
+            }
+            disabled={!hasMembers}
+          />
+        </View>
+      ) : null}
+    </View>
   );
 }
