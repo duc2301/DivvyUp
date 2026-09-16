@@ -5,53 +5,80 @@
 /*
   NGUỒN CHÂN LÝ DUY NHẤT CHO MÀU (AGENTS.md mục 2).
   Không hardcode màu trong component. Không định nghĩa lại màu ở nơi khác.
-  Khi nối UI Kitten vào, theme Eva phải đọc lại các biến này, không tự khai màu riêng.
 
-  Giá trị viết theo dạng "H S% L%" (không bọc hsl()) để tailwind.config.js
-  ghép thành hsl(var(--x)) — đây cũng là quy ước của react-native-reusables.
+  Hướng thiết kế: nền kem ấm, điểm nhấn oải hương, thẻ trắng bo tròn lớn.
+  Chủ ý là làm dịu mắt — bảng màu cũ dùng nền gần như đen tuyền (4% sáng),
+  gây chói viền và mỏi mắt khi đọc lâu.
+
+  Bản tối KHÔNG phải màu đen. Nó là than tím sâu, giữ đúng tinh thần ấm và mềm
+  của bản sáng thay vì đổi sang một ngôn ngữ thị giác khác.
+
+  Giá trị viết dạng "H S% L%" (không bọc hsl()) để tailwind.config.js ghép
+  thành hsl(var(--x)) — cũng là quy ước của react-native-reusables.
 */
 @layer base {
   :root {
-    --background: 0 0% 100%;
-    --foreground: 240 10% 4%;
+    /* Nền kem ấm, không phải trắng tinh */
+    --background: 40 38% 96%;
+    --foreground: 250 20% 14%;
 
+    /* Thẻ nổi lên trên nền kem bằng màu trắng thuần */
     --card: 0 0% 100%;
-    --card-foreground: 240 10% 4%;
+    --card-foreground: 250 20% 14%;
 
-    --muted: 240 5% 96%;
-    --muted-foreground: 240 4% 46%;
+    --muted: 40 25% 92%;
+    --muted-foreground: 250 8% 46%;
 
-    --border: 240 6% 90%;
-    --input: 240 6% 90%;
+    --border: 40 20% 88%;
+    --input: 40 20% 88%;
 
-    --primary: 211 86% 53%; /* khớp màu splash screen trong app.json */
-    --primary-foreground: 0 0% 100%;
+    /* Nút chính là mực đậm, KHÔNG phải oải hương.
+       Oải hương ở độ sáng 70% mà đặt chữ trắng lên thì tương phản chỉ khoảng
+       2:1 — dưới xa ngưỡng 4.5:1 của WCAG AA. Mực trên kem đạt trên 15:1. */
+    --primary: 250 22% 15%;
+    --primary-foreground: 40 38% 96%;
+
+    /* Oải hương là màu NHẤN: chấm chọn, huy hiệu, mảng nền nhẹ. */
+    --accent: 252 68% 72%;
+    --accent-foreground: 250 22% 15%;
+
+    /* Biến thể đậm hơn của oải hương, dành riêng cho CHỮ trên nền sáng —
+       bản 72% quá nhạt để đọc. */
+    --accent-strong: 252 52% 50%;
 
     /* Ngữ nghĩa DivvyUp: dương = được nhận lại, âm = đang nợ.
-       Lưu ý: không bao giờ chỉ dùng màu để phân biệt hai trạng thái này —
-       luôn kèm dấu +/- hoặc nhãn chữ, vì người mù màu không phân biệt được. */
-    --positive: 142 71% 36%;
-    --negative: 0 72% 51%;
+       Không bao giờ chỉ dùng màu để phân biệt hai trạng thái này — luôn kèm
+       dấu +/- hoặc nhãn chữ, vì người mù màu không phân biệt được. */
+    --positive: 152 46% 38%;
+    --negative: 4 68% 55%;
   }
 
   .dark:root {
-    --background: 240 10% 4%;
-    --foreground: 0 0% 98%;
+    /* Than tím sâu thay vì đen tuyền: giảm chói viền, đỡ mỏi mắt */
+    --background: 252 20% 11%;
+    --foreground: 40 30% 95%;
 
-    --card: 240 6% 10%;
-    --card-foreground: 0 0% 98%;
+    --card: 252 17% 16%;
+    --card-foreground: 40 30% 95%;
 
-    --muted: 240 4% 16%;
-    --muted-foreground: 240 5% 65%;
+    --muted: 252 15% 22%;
+    --muted-foreground: 250 12% 68%;
 
-    --border: 240 4% 16%;
-    --input: 240 4% 16%;
+    --border: 252 13% 27%;
+    --input: 252 13% 27%;
 
-    --primary: 211 86% 60%;
-    --primary-foreground: 240 10% 4%;
+    /* Bản tối đảo lại: nút chính sáng trên nền tối, vẫn tương phản rất cao. */
+    --primary: 40 30% 92%;
+    --primary-foreground: 252 22% 12%;
 
-    --positive: 142 61% 48%;
-    --negative: 0 84% 65%;
+    --accent: 252 72% 78%;
+    --accent-foreground: 252 22% 12%;
+
+    /* Nền tối thì oải hương sáng đã đủ đọc, không cần làm đậm thêm. */
+    --accent-strong: 252 72% 78%;
+
+    --positive: 152 48% 58%;
+    --negative: 4 76% 68%;
   }
 
   :root {

@@ -42,6 +42,11 @@ function friendlyMessage(error: PostgrestError): string {
       return 'Dữ liệu tham chiếu tới bản ghi không tồn tại.';
     case 'PGRST301':
       return 'Phiên đăng nhập đã hết hạn. Hãy đăng nhập lại.';
+    case 'PGRST205':
+      // Bảng chưa có trong schema cache — gần như luôn là do chưa áp migration.
+      return 'Cơ sở dữ liệu chưa có bảng này. Hãy áp các migration trong supabase/migrations/ rồi thử lại.';
+    case 'PGRST202':
+      return 'Cơ sở dữ liệu chưa có hàm RPC này. Hãy áp các migration trong supabase/migrations/ rồi thử lại.';
     default:
       return error.message || 'Không kết nối được tới máy chủ.';
   }

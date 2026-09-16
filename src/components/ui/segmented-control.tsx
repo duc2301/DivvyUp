@@ -33,10 +33,11 @@ export function SegmentedControl<T extends string>({
             accessibilityLabel={option.label}
             onPress={() => onChange(option.value)}
             // min-h-11 giữ vùng chạm >= 44pt theo luật a11y trong AGENTS.md
-            className={`min-h-11 flex-1 items-center justify-center rounded-lg px-3 ${
+            className={`min-h-11 min-w-0 flex-1 items-center justify-center rounded-lg px-2 ${
               selected ? 'bg-card' : ''
             }`}>
             <Text
+              numberOfLines={1}
               className={`text-sm ${
                 selected ? 'font-semibold text-foreground' : 'text-muted-foreground'
               }`}>

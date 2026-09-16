@@ -103,24 +103,41 @@ where c.table_schema = 'public'
 select
   e.id as khoan_chi_lech_tong,
   e.amount_minor,
-  coalesce(p.tong_ung, 0)  as tong_tien_ung,
   coalesce(s.tong_chia, 0) as tong_phan_chia
 from public.expenses e
-left join (
-  select expense_id, sum(amount_minor) as tong_ung
-  from public.expense_payments group by expense_id
-) p on p.expense_id = e.id
 left join (
   select expense_id, sum(amount_minor) as tong_chia
   from public.expense_shares group by expense_id
 ) s on s.expense_id = e.id
-where coalesce(p.tong_ung, 0) <> e.amount_minor
-   or coalesce(s.tong_chia, 0) <> e.amount_minor;
+where coalesce(s.tong_chia, 0) <> e.amount_minor;
 
 
--- 9. Nhóm nào có tổng số dư khác 0?
---    Tổng net của một nhóm LUÔN phải bằng 0. Khác 0 là dữ liệu hỏng.
-select group_id, sum(net_minor) as tong_so_du_phai_bang_0
-from public.group_balances
-group by group_id
+-- 9. Chuyến đi nào có tổng số dư khác 0?
+--    Tổng net của một chuyến đi LUÔN phải bằng 0. Khác 0 là dữ liệu hỏng.
+select trip_id, sum(net_minor) as tong_so_du_phai_bang_0
+from public.trip_balances
+group by trip_id
 having sum(net_minor) <> 0;
+
+
+-- 10. Người trả hoặc người gánh có ai lọt sang chuyến đi khác không?
+--     Trigger check_member_belongs_to_trip phải chặn, đây là lưới kiểm tra lại.
+select e.id as khoan_chi_sai_chuyen, 'paid_by' as vi_tri
+from public.expenses e
+join public.trip_members tm on tm.id = e.paid_by
+where tm.trip_id <> e.trip_id
+union all
+select e.id, 'expense_shares'
+from public.expense_shares es
+join public.expenses e on e.id = es.expense_id
+join public.trip_members tm on tm.id = es.member_id
+where tm.trip_id <> e.trip_id;
+
+
+-- 11. Có tài khoản nào chiếm hai chỗ trong cùng một chuyến đi không?
+--     Unique index chặn rồi, đây là kiểm tra lại vì lỗi này làm số dư nhân đôi.
+select trip_id, user_id, count(*) as so_cho_chiem
+from public.trip_members
+where user_id is not null and removed_at is null
+group by trip_id, user_id
+having count(*) > 1;

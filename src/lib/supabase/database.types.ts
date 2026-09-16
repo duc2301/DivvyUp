@@ -6,19 +6,20 @@
  *
  * HAI RÀNG BUỘC CỦA supabase-js, sai là mọi truy vấn suy ra kiểu `never`:
  *  1. Mỗi Table và View PHẢI có mảng `Relationships`, kể cả khi rỗng.
- *  2. `Insert`/`Update` phải là object type. Không được dùng `never` — nó phá
+ *  2. `Insert`/`Update` phải là object type, không được là `never` — nó phá
  *     ràng buộc Record<string, unknown>. Bảng cấm ghi thì dùng
- *     Record<string, never>: vẫn thoả ràng buộc, và mọi lệnh insert vẫn bị
- *     TypeScript chặn tại chỗ.
+ *     Record<string, never>: vẫn thoả ràng buộc, mà mọi lệnh insert vẫn bị
+ *     TypeScript chặn ngay lúc gõ.
  *
  * Về bigint: PostgREST trả cột bigint dưới dạng số JSON. Mọi giá trị *_minor
- * vì thế khai là number, nhưng PHẢI đi qua toSafeMinor() trước khi dùng — số
- * vượt ngưỡng an toàn của JavaScript sẽ mất chính xác mà không báo lỗi.
+ * phải đi qua toSafeMinor() trước khi dùng — số vượt ngưỡng an toàn của
+ * JavaScript sẽ mất chính xác mà không báo lỗi.
  */
 
-export type GroupRole = 'owner' | 'member';
+export type TripRole = 'owner' | 'member';
+export type SplitModeDb = 'equal' | 'exact';
 
-/** Bảng chỉ cho đọc: ghi phải đi qua RPC. Xem AGENTS.md mục 4. */
+/** Bảng chỉ cho đọc: ghi phải đi qua RPC. */
 type ReadOnly = Record<string, never>;
 
 export interface Database {
@@ -32,24 +33,19 @@ export interface Database {
           created_at: string;
           updated_at: string;
         };
-        Insert: {
-          id: string;
-          display_name: string;
-          avatar_url?: string | null;
-        };
-        Update: {
-          display_name?: string;
-          avatar_url?: string | null;
-        };
-        // id tham chiếu auth.users, nằm ngoài schema public nên không khai ở đây.
+        Insert: { id: string; display_name: string; avatar_url?: string | null };
+        Update: { display_name?: string; avatar_url?: string | null };
         Relationships: [];
       };
 
-      groups: {
+      trips: {
         Row: {
           id: string;
           name: string;
           currency: string;
+          start_date: string | null;
+          end_date: string | null;
+          join_code: string;
           created_by: string;
           created_at: string;
           updated_at: string;
@@ -59,15 +55,19 @@ export interface Database {
           id?: string;
           name: string;
           currency: string;
+          start_date?: string | null;
+          end_date?: string | null;
           created_by: string;
         };
         Update: {
           name?: string;
+          start_date?: string | null;
+          end_date?: string | null;
           deleted_at?: string | null;
         };
         Relationships: [
           {
-            foreignKeyName: 'groups_created_by_fkey';
+            foreignKeyName: 'trips_created_by_fkey';
             columns: ['created_by'];
             isOneToOne: false;
             referencedRelation: 'profiles';
@@ -76,37 +76,71 @@ export interface Database {
         ];
       };
 
-      group_members: {
+      trip_groups: {
         Row: {
-          group_id: string;
-          user_id: string;
-          role: GroupRole;
-          joined_at: string;
-          left_at: string | null;
+          id: string;
+          trip_id: string;
+          name: string;
+          sort_order: number;
+          created_at: string;
+          deleted_at: string | null;
         };
+        Insert: { id?: string; trip_id: string; name: string; sort_order?: number };
+        Update: { name?: string; sort_order?: number; deleted_at?: string | null };
+        Relationships: [
+          {
+            foreignKeyName: 'trip_groups_trip_id_fkey';
+            columns: ['trip_id'];
+            isOneToOne: false;
+            referencedRelation: 'trips';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+
+      trip_members: {
+        Row: {
+          id: string;
+          trip_id: string;
+          group_id: string | null;
+          display_name: string;
+          /** null = mới chỉ là cái tên, chưa gắn tài khoản. */
+          user_id: string | null;
+          role: TripRole;
+          sort_order: number;
+          created_at: string;
+          removed_at: string | null;
+        };
+        // user_id cố ý vắng mặt: gắn tài khoản chỉ qua RPC join_trip_by_code(),
+        // trigger protect_trip_member_identity chặn mọi đường khác.
         Insert: {
-          group_id: string;
-          user_id: string;
-          role?: GroupRole;
+          id?: string;
+          trip_id: string;
+          group_id?: string | null;
+          display_name: string;
+          sort_order?: number;
         };
         Update: {
-          role?: GroupRole;
-          left_at?: string | null;
+          group_id?: string | null;
+          display_name?: string;
+          role?: TripRole;
+          sort_order?: number;
+          removed_at?: string | null;
         };
         Relationships: [
           {
-            foreignKeyName: 'group_members_group_id_fkey';
-            columns: ['group_id'];
+            foreignKeyName: 'trip_members_trip_id_fkey';
+            columns: ['trip_id'];
             isOneToOne: false;
-            referencedRelation: 'groups';
+            referencedRelation: 'trips';
             referencedColumns: ['id'];
           },
           {
-            foreignKeyName: 'group_members_user_id_fkey';
-            columns: ['user_id'];
+            foreignKeyName: 'trip_members_group_same_trip_fkey';
+            columns: ['group_id', 'trip_id'];
             isOneToOne: false;
-            referencedRelation: 'profiles';
-            referencedColumns: ['id'];
+            referencedRelation: 'trip_groups';
+            referencedColumns: ['id', 'trip_id'];
           },
         ];
       };
@@ -114,74 +148,41 @@ export interface Database {
       expenses: {
         Row: {
           id: string;
-          group_id: string;
+          trip_id: string;
           currency: string;
           description: string;
           amount_minor: number;
+          paid_by: string;
+          split_mode: SplitModeDb;
           paid_at: string;
           created_by: string;
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
         };
-        // Cố ý không cho insert trực tiếp: bảng này không có policy INSERT,
-        // tạo khoản chi phải qua RPC create_expense().
+        // Không có policy INSERT: tạo khoản chi phải qua RPC create_expense().
         Insert: ReadOnly;
-        Update: {
-          description?: string;
-          paid_at?: string;
-          deleted_at?: string | null;
-        };
+        Update: { deleted_at?: string | null };
         Relationships: [
           {
-            foreignKeyName: 'expenses_group_currency_fkey';
-            columns: ['group_id', 'currency'];
+            foreignKeyName: 'expenses_trip_currency_fkey';
+            columns: ['trip_id', 'currency'];
             isOneToOne: false;
-            referencedRelation: 'groups';
+            referencedRelation: 'trips';
             referencedColumns: ['id', 'currency'];
           },
           {
-            foreignKeyName: 'expenses_created_by_fkey';
-            columns: ['created_by'];
+            foreignKeyName: 'expenses_paid_by_fkey';
+            columns: ['paid_by'];
             isOneToOne: false;
-            referencedRelation: 'profiles';
-            referencedColumns: ['id'];
-          },
-        ];
-      };
-
-      expense_payments: {
-        Row: {
-          expense_id: string;
-          user_id: string;
-          amount_minor: number;
-        };
-        Insert: ReadOnly;
-        Update: ReadOnly;
-        Relationships: [
-          {
-            foreignKeyName: 'expense_payments_expense_id_fkey';
-            columns: ['expense_id'];
-            isOneToOne: false;
-            referencedRelation: 'expenses';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'expense_payments_user_id_fkey';
-            columns: ['user_id'];
-            isOneToOne: false;
-            referencedRelation: 'profiles';
+            referencedRelation: 'trip_members';
             referencedColumns: ['id'];
           },
         ];
       };
 
       expense_shares: {
-        Row: {
-          expense_id: string;
-          user_id: string;
-          amount_minor: number;
-        };
+        Row: { expense_id: string; member_id: string; amount_minor: number };
         Insert: ReadOnly;
         Update: ReadOnly;
         Relationships: [
@@ -193,10 +194,10 @@ export interface Database {
             referencedColumns: ['id'];
           },
           {
-            foreignKeyName: 'expense_shares_user_id_fkey';
-            columns: ['user_id'];
+            foreignKeyName: 'expense_shares_member_id_fkey';
+            columns: ['member_id'];
             isOneToOne: false;
-            referencedRelation: 'profiles';
+            referencedRelation: 'trip_members';
             referencedColumns: ['id'];
           },
         ];
@@ -205,10 +206,10 @@ export interface Database {
       settlements: {
         Row: {
           id: string;
-          group_id: string;
+          trip_id: string;
           currency: string;
-          from_user: string;
-          to_user: string;
+          from_member: string;
+          to_member: string;
           amount_minor: number;
           settled_at: string;
           note: string | null;
@@ -218,50 +219,35 @@ export interface Database {
         };
         Insert: {
           id?: string;
-          group_id: string;
+          trip_id: string;
           currency: string;
-          from_user: string;
-          to_user: string;
+          from_member: string;
+          to_member: string;
           amount_minor: number;
           settled_at?: string;
           note?: string | null;
           created_by: string;
         };
-        Update: {
-          note?: string | null;
-          deleted_at?: string | null;
-        };
+        Update: { note?: string | null; deleted_at?: string | null };
         Relationships: [
           {
-            foreignKeyName: 'settlements_group_currency_fkey';
-            columns: ['group_id', 'currency'];
+            foreignKeyName: 'settlements_trip_currency_fkey';
+            columns: ['trip_id', 'currency'];
             isOneToOne: false;
-            referencedRelation: 'groups';
+            referencedRelation: 'trips';
             referencedColumns: ['id', 'currency'];
-          },
-          {
-            foreignKeyName: 'settlements_from_user_fkey';
-            columns: ['from_user'];
-            isOneToOne: false;
-            referencedRelation: 'profiles';
-            referencedColumns: ['id'];
-          },
-          {
-            foreignKeyName: 'settlements_to_user_fkey';
-            columns: ['to_user'];
-            isOneToOne: false;
-            referencedRelation: 'profiles';
-            referencedColumns: ['id'];
           },
         ];
       };
     };
 
     Views: {
-      group_balances: {
+      trip_balances: {
         Row: {
-          group_id: string;
-          user_id: string;
+          trip_id: string;
+          member_id: string;
+          display_name: string;
+          group_id: string | null;
           currency: string;
           net_minor: number;
         };
@@ -270,25 +256,57 @@ export interface Database {
     };
 
     Functions: {
+      create_trip_group: {
+        Args: { p_trip_id: string; p_name: string; p_member_count?: number };
+        Returns: string;
+      };
       create_expense: {
         Args: {
-          p_group_id: string;
+          p_trip_id: string;
           p_description: string;
           p_amount_minor: number;
-          p_payments: { user_id: string; amount_minor: number }[];
-          p_shares: { user_id: string; amount_minor: number }[];
+          p_paid_by: string;
+          p_shares: { member_id: string; amount_minor: number }[];
+          p_split_mode?: SplitModeDb;
           p_paid_at?: string;
         };
         Returns: string;
+      };
+      update_expense: {
+        Args: {
+          p_expense_id: string;
+          p_description: string;
+          p_amount_minor: number;
+          p_paid_by: string;
+          p_shares: { member_id: string; amount_minor: number }[];
+          p_split_mode: SplitModeDb;
+          p_paid_at: string;
+        };
+        Returns: undefined;
       };
       void_expense: {
         Args: { p_expense_id: string };
         Returns: undefined;
       };
+      preview_trip_by_code: {
+        Args: { p_join_code: string };
+        Returns: {
+          trip_id: string;
+          trip_name: string;
+          member_id: string;
+          member_name: string;
+          claimed: boolean;
+        }[];
+      };
+      join_trip_by_code: {
+        Args: { p_join_code: string; p_member_id: string };
+        Returns: string;
+      };
     };
 
     Enums: {
-      group_role: GroupRole;
+      trip_role: TripRole;
+      split_mode: SplitModeDb;
     };
 
     CompositeTypes: Record<string, never>;

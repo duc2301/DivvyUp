@@ -1,87 +1,85 @@
 # Schema Supabase — DivvyUp
 
+## Mô hình
+
+```
+auth.users → profiles
+                │
+                ▼
+              trips ──► trip_groups ──► trip_members ◄── user_id (NULL cho tới khi nhận lời mời)
+                │                            ▲
+                ├──► expenses ──────paid_by──┤   (một người đại diện trả)
+                │        └──► expense_shares─┤
+                └──► settlements ────────────┘
+
+                view trip_balances  (net = đã ứng − phải gánh + đã trả − đã nhận)
+```
+
+**Điểm then chốt: `trip_members` không phải tài khoản.** Nó là một cái tên do người tổ chức nhập, `user_id` để trống. Khi người đó được mời và nhận chỗ, `user_id` mới được gắn. Nhờ vậy người chưa cài app vẫn có công nợ đầy đủ.
+
+Hệ quả: quyền truy cập chuyến đi đi qua `trip_members.user_id`, không đi qua `profiles`. Mọi khoản chi tham chiếu `trip_members.id`, không tham chiếu `profiles.id`.
+
 ## Áp dụng
 
-Chạy **đúng thứ tự**, mỗi file một lần:
+Chạy **đúng thứ tự**, mỗi file một lần, trong SQL Editor của dashboard:
 
 | Thứ tự | File | Nội dung |
 |---|---|---|
-| 1 | `migrations/20260915_1000_core_groups.sql` | profiles, groups, group_members, hàm trợ giúp, RLS |
-| 2 | `migrations/20260915_1010_expenses.sql` | expenses, payments, shares, trigger bất biến tổng |
-| 3 | `migrations/20260915_1020_expense_rpc.sql` | RPC `create_expense`, `void_expense` |
-| 4 | `migrations/20260915_1030_settlements_balances.sql` | settlements, view `group_balances` |
+| 1 | `migrations/20260915_1100_trips.sql` | profiles, trips, trip_groups, trip_members, hàm trợ giúp, RLS |
+| 2 | `migrations/20260915_1110_expenses.sql` | expenses, expense_shares, trigger bất biến |
+| 3 | `migrations/20260915_1120_rpc.sql` | create_trip_group, create/update/void_expense, luồng mời |
+| 4 | `migrations/20260915_1130_settlements_balances.sql` | settlements, view trip_balances |
+| 5 | `migrations/20260916_1000_fix_trip_balances_type.sql` | ép `net_minor` về bigint (xem ghi chú trong file) |
+| 6 | `migrations/20260916_1010_fix_trip_insert_visibility.sql` | người tạo luôn thấy chuyến đi của mình (xem ghi chú trong file) |
 
-Cách nhanh nhất: mở **SQL Editor** trên dashboard Supabase, dán từng file theo thứ tự.
+Xong thì chạy `verify.sql` — **11 truy vấn, tất cả phải trả về 0 dòng**.
 
-Dùng CLI thì:
+## Những quyết định đáng nhớ
 
-```bash
-npx supabase link --project-ref <project-ref>
-```
+**Tiền là `bigint` đơn vị nhỏ nhất.** VND lưu bằng đồng, USD bằng cent. Không có cột `float`/`numeric` nào cho tiền.
 
-```bash
-npx supabase db push
-```
+**Một người đại diện trả, lưu ở cột `expenses.paid_by`.** Không có bảng payments riêng. Hệ quả tốt: "tổng tiền ứng = tổng khoản chi" đúng theo cấu trúc, không cần ràng buộc nào canh. Chỉ còn một bất biến phải ép là tổng phần chia.
 
-Sau khi xong, chạy `verify.sql` — **mọi truy vấn trong đó phải trả về 0 dòng**.
+**Bất biến `sum(expense_shares) = expenses.amount_minor`** ép bằng constraint trigger `DEFERRABLE INITIALLY DEFERRED`. Phải hoãn vì lúc chèn dòng `expenses` thì chưa có phần chia nào.
 
-## Lưu ý khi áp dụng
+**Đơn vị tiền tệ khoá bằng khoá ngoại composite.** `trips` có `unique (id, currency)`; `expenses` và `settlements` tham chiếu `(trip_id, currency)`. Khoản chi không thể mang đơn vị tiền tệ khác chuyến đi.
 
-**Trigger trên `auth.users`** (file 1) cần quyền của role `postgres`. Chạy qua SQL Editor của dashboard là được. Nếu môi trường của bạn chặn, bỏ trigger đó đi và tạo hồ sơ bằng một lệnh `upsert` vào `profiles` ngay sau khi đăng nhập thành công.
+**Thành viên không lọt được sang chuyến đi khác.** `trip_members.group_id` tham chiếu composite `(id, trip_id)` của `trip_groups`; người trả và người gánh được trigger `check_member_belongs_to_trip` kiểm.
 
-**Migration chưa có đường rollback tự động.** Đây là lần khởi tạo đầu tiên nên rollback = xoá sạch schema:
+**`expenses` và `expense_shares` không có policy INSERT.** Cố ý — tạo khoản chi bắt buộc qua RPC `create_expense()`. Client không tạo được khoản chi lệch tổng dù cố tình.
 
-```sql
-drop schema public cascade; create schema public;
-```
+**Cột `user_id` không sửa được bằng UPDATE thường.** Trigger `protect_trip_member_identity` chặn. Cửa duy nhất là RPC `join_trip_by_code()`, và nó mở khoá bằng `set_config('divvyup.allow_identity_change', 'on', true)` — cờ chỉ tồn tại trong transaction đó, PostgREST không cho client tự đặt.
 
-Chỉ làm khi chưa có dữ liệu thật. Từ migration thứ 5 trở đi, mỗi file phải kèm cách đảo ngược.
+Lý do phải làm vậy: `SECURITY DEFINER` bỏ qua RLS **nhưng không bỏ qua trigger**, nên nếu không có cờ thì chính RPC cũng bị trigger của mình chặn.
 
-## Những quyết định thiết kế đáng nhớ
+**Mỗi tài khoản chỉ chiếm một chỗ trong mỗi chuyến đi** — unique index `trip_members_one_account_per_trip`. Thiếu nó, một người chiếm hai suất và số dư nhân đôi.
 
-**Tiền là `bigint` đơn vị nhỏ nhất.** VND lưu bằng đồng, USD bằng cent. Không có cột `float`/`numeric` nào cho tiền. Khớp đúng kiểu `Money` ở `src/lib/money/`.
+**`trip_balances` bật `security_invoker = true`.** Thiếu dòng này, view chạy với quyền người tạo, bỏ qua RLS và để lộ số dư của mọi chuyến đi.
 
-**Đơn vị tiền tệ bị khoá bằng khoá ngoại composite.** `groups` có `unique (id, currency)`, còn `expenses` và `settlements` tham chiếu `(group_id, currency)`. Một khoản chi **không thể** mang đơn vị tiền tệ khác nhóm của nó — ràng buộc ở tầng DB, không phụ thuộc client nhớ kiểm.
+## Luồng mời
 
-**Bất biến tổng được ép bằng constraint trigger hoãn tới COMMIT.** Phải hoãn vì lúc chèn dòng `expenses` thì chưa có dòng nào trong `shares`. Kể cả khi ai đó `UPDATE` thẳng `amount_minor` qua PostgREST, transaction vẫn bị chặn.
+Người được mời chưa phải thành viên nên RLS chặn họ đọc mọi thứ. Hai RPC `SECURITY DEFINER` là cửa duy nhất, chỉ mở khi có mã đúng:
 
-**Không có policy INSERT trên `expenses`, `expense_payments`, `expense_shares`.** Cố ý. Tạo khoản chi bắt buộc đi qua RPC `create_expense()` — nơi kiểm quyền, kiểm bất biến, và ghi cả ba bảng trong một transaction. Client không thể tạo ra khoản chi lệch tổng ngay cả khi cố tình.
+1. `preview_trip_by_code(code)` → tên chuyến đi + danh sách chỗ, kèm cờ chỗ nào đã có người nhận
+2. `join_trip_by_code(code, member_id)` → gắn tài khoản vào đúng chỗ đó
 
-**Xoá mềm ở mọi nơi.** `deleted_at` cho nhóm/khoản chi/tất toán, `left_at` cho thành viên. Xoá cứng dữ liệu tiền bạc làm số dư của người khác thay đổi đột ngột và không còn cách truy vết.
+Mã tham gia là cột `trips.join_code`, 8 ký tự in hoa, sinh tự động.
 
-**`group_balances` bật `security_invoker = on`.** Thiếu dòng này, view chạy với quyền người tạo, bỏ qua RLS và để lộ số dư của mọi nhóm cho mọi người.
+## Checklist kiểm thủ công — cần HAI tài khoản
 
-## Cách gọi RPC từ app
+Một tài khoản không kiểm được gì về cô lập dữ liệu.
 
-```ts
-const { data, error } = await supabase.rpc('create_expense', {
-  p_group_id: groupId,
-  p_description: 'Ăn tối',
-  p_amount_minor: total.minor,           // lấy thẳng từ Money
-  p_payments: [{ user_id: payerId, amount_minor: total.minor }],
-  p_shares: lines.map((line) => ({
-    user_id: line.participantId,
-    amount_minor: line.amount.minor,
-  })),
-});
-```
-
-`lines` chính là kết quả của `splitExpense()`. Lõi tiền tệ trong app và ràng buộc trong DB kiểm cùng một bất biến ở hai tầng độc lập.
-
-## Checklist kiểm thử thủ công — cần HAI tài khoản
-
-Một tài khoản không kiểm được gì về cô lập dữ liệu. Tạo hai người dùng ở hai nhóm khác nhau rồi thử:
-
-- [ ] A đọc dữ liệu nhóm của B → trả về **rỗng**, không phải lỗi
-- [ ] A sửa hoặc huỷ khoản chi của nhóm B → bị từ chối
-- [ ] A gọi `create_expense` với `p_group_id` của nhóm B → báo "không phải thành viên"
-- [ ] A tạo khoản chi có người tham gia nằm ngoài nhóm → báo "có người không thuộc nhóm"
+- [ ] A đọc dữ liệu chuyến đi của B → trả về **rỗng**, không phải lỗi
+- [ ] A gọi `create_expense` với `p_trip_id` của chuyến B → báo "không thuộc chuyến đi"
+- [ ] A tạo khoản chi có người gánh thuộc chuyến khác → bị từ chối
 - [ ] A tạo khoản chi với tổng phần chia lệch tổng tiền → bị từ chối kèm số chênh lệch
 - [ ] A insert thẳng vào `expense_shares` qua PostgREST → bị từ chối (không có policy)
-- [ ] Người đã rời nhóm (`left_at` khác null) không còn đọc được dữ liệu nhóm
-- [ ] `select * from group_balances` chỉ trả về các nhóm của chính người gọi
-- [ ] Tổng `net_minor` của mỗi nhóm bằng 0
+- [ ] A `update trip_members set user_id = ...` → bị trigger chặn
+- [ ] B nhận một chỗ đã có người → báo "chỗ này đã có người nhận"
+- [ ] B nhận chỗ thứ hai trong cùng chuyến → báo "bạn đã có mặt trong chuyến đi này rồi"
+- [ ] `select * from trip_balances` chỉ trả về chuyến đi của chính người gọi
+- [ ] Tổng `net_minor` của mỗi chuyến đi bằng 0
 
 ## Còn thiếu
 
-Chưa có: mời thành viên bằng link/mã, Realtime cho cập nhật trực tiếp, phân trang khi danh sách khoản chi dài, và tỷ giá khi nhóm dùng nhiều đơn vị tiền tệ (hiện mỗi nhóm khoá một đơn vị duy nhất).
+Chưa có: đổi mã tham gia khi bị lộ, hạn dùng của mã, Realtime, phân trang khi danh sách khoản chi dài, nhiều người cùng ứng tiền cho một khoản (hiện chỉ một đại diện), và tỷ giá khi chuyến đi cần nhiều đơn vị tiền tệ (hiện mỗi chuyến khoá một đơn vị).
