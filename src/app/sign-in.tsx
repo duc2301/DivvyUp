@@ -1,14 +1,16 @@
 import { useState } from 'react';
 import { Text, View } from 'react-native';
 
+import { BrandLockup } from '@/components/ui/brand';
 import { Button } from '@/components/ui/button';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Screen } from '@/components/ui/screen';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { ErrorView } from '@/components/ui/state-views';
 import { TextField } from '@/components/ui/text-field';
 import { signInWithPassword, signUpWithPassword } from '@/features/auth/auth-actions';
-import { describeError } from '@/lib/data/use-async';
 import { useSessionContext } from '@/features/auth/session-context';
+import { describeError } from '@/lib/data/use-async';
 
 type Mode = 'signIn' | 'signUp';
 
@@ -55,11 +57,14 @@ export default function SignInScreen() {
   return (
     <>
       <Screen>
-        <View className="pb-2 pt-8">
-          <Text className="font-display text-5xl leading-tight text-foreground">DivvyUp</Text>
-          <Text className="mt-2 text-base leading-6 text-muted-foreground">
-            Chia hoá đơn chuyến đi không lệch một đồng
-          </Text>
+        {/* Logo thay cho khối chữ: dòng tagline đã nằm sẵn trong file logo,
+            viết lại bằng Text sẽ thành hai nguồn chân lý cho cùng một câu. */}
+        <View className="flex-row justify-end pt-2">
+          <ThemeToggle />
+        </View>
+
+        <View className="items-center pb-4">
+          <BrandLockup width={240} />
         </View>
 
         <SegmentedControl
@@ -127,9 +132,6 @@ export default function SignInScreen() {
             variant="ghost"
             onPress={() => void setGuestMode(true)}
           />
-          <Text className="mt-2 text-xs text-muted-foreground">
-            Dữ liệu sẽ được lưu cục bộ trên máy bạn.
-          </Text>
         </View>
       </Screen>
     </>

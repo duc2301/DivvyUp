@@ -3,10 +3,12 @@ import { useCallback, useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 
 import { AppHeader, HeaderAction } from '@/components/ui/app-header';
+import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { Button } from '@/components/ui/button';
 import { Screen } from '@/components/ui/screen';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
 import { signOut } from '@/features/auth/auth-actions';
+import { useSessionContext } from '@/features/auth/session-context';
 import { listTrips } from '@/lib/data/manager';
 import { useAsync } from '@/lib/data/use-async';
 import { formatDate } from '@/lib/datetime';
@@ -27,6 +29,7 @@ function tripDateLabel(startDate: string | null, endDate: string | null): string
 
 export default function TripListScreen() {
   const router = useRouter();
+  const { isGuest, setGuestMode } = useSessionContext();
   const [signingOut, setSigningOut] = useState(false);
   const { data: trips, error, loading, reload } = useAsync(() => listTrips(), []);
 
@@ -42,18 +45,27 @@ export default function TripListScreen() {
       <Screen
         header={
           <AppHeader
-            title="✈️ Chuyến đi của tôi"
+            title="My trips"
             subtitle="Mỗi chuyến một sổ chi tiêu riêng"
             right={
-              <HeaderAction
-                label="Thoát"
-                accessibilityLabel="Đăng xuất"
-                disabled={signingOut}
-                onPress={() => {
-                  setSigningOut(true);
-                  void signOut().finally(() => setSigningOut(false));
-                }}
-              />
+              <View className="flex-row items-center gap-2">
+                <ThemeToggle />
+                {/* Khách không có phiên để đăng xuất — nút phải mời họ đăng
+                    nhập, còn không thì bấm vào sẽ chẳng có gì xảy ra. */}
+                <HeaderAction
+                  label={isGuest ? 'Đăng nhập' : 'Thoát'}
+                  accessibilityLabel={isGuest ? 'Đăng nhập để đồng bộ' : 'Đăng xuất'}
+                  disabled={signingOut}
+                  onPress={() => {
+                    if (isGuest) {
+                      void setGuestMode(false);
+                      return;
+                    }
+                    setSigningOut(true);
+                    void signOut().finally(() => setSigningOut(false));
+                  }}
+                />
+              </View>
             }
           />
         }>

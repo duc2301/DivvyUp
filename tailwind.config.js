@@ -1,9 +1,9 @@
 /** @type {import('tailwindcss').Config} */
 module.exports = {
-  // PHẢI là 'class'. NativeWind gắn class .dark vào root theo colorScheme, và
-  // bảng màu tối trong global.css được viết dưới selector .dark:root.
-  // Đổi sang 'media' sẽ biến toàn bộ khối màu tối thành code chết: React Native
-  // không có media query CSS, nên .dark không bao giờ được gắn.
+  // PHẢI khớp với cách viết token trong src/global.css (.dark:root).
+  // 'class' là bắt buộc vì app có nút bật tắt sáng/tối thủ công: NativeWind chỉ
+  // gắn class .dark khi được setColorScheme() gọi tới, và đó là thứ cho phép
+  // ghi đè chế độ của hệ thống.
   darkMode: 'class',
   content: ['./src/**/*.{ts,tsx}'],
   presets: [require('nativewind/preset')],
@@ -32,9 +32,10 @@ module.exports = {
         negative: 'hsl(var(--negative) / <alpha-value>)',
       },
       fontFamily: {
-        // Chữ serif chỉ dùng cho tiêu đề lớn. Thân bài vẫn dùng font hệ thống:
-        // nó có sẵn đủ dấu tiếng Việt trên mọi máy và không tốn thời gian tải.
-        display: ['InstrumentSerif_400Regular'],
+        // Poppins khớp với chữ trong logo "Divvy up". Chỉ dùng cho tiêu đề;
+        // thân bài vẫn để font hệ thống vì nó có sẵn đủ dấu tiếng Việt và
+        // không tốn thời gian tải.
+        display: ['Poppins_600SemiBold'],
       },
       borderRadius: {
         // Bo tròn lớn hơn mặc định để hợp với ngôn ngữ thẻ mềm.

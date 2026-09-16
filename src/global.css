@@ -6,79 +6,82 @@
   NGUỒN CHÂN LÝ DUY NHẤT CHO MÀU (AGENTS.md mục 2).
   Không hardcode màu trong component. Không định nghĩa lại màu ở nơi khác.
 
-  Hướng thiết kế: nền kem ấm, điểm nhấn oải hương, thẻ trắng bo tròn lớn.
-  Chủ ý là làm dịu mắt — bảng màu cũ dùng nền gần như đen tuyền (4% sáng),
-  gây chói viền và mỏi mắt khi đọc lâu.
+  Bảng màu lấy thẳng từ logo:
+    teal  #0D9488  -> hsl(175 84% 32%)   màu chính, nút và số dương
+    mint  #2DD4BF  -> hsl(172 66% 50%)   màu nhấn
+    coral #F43F5E  -> hsl(350 89% 60%)   cảnh báo và số âm
+    ink   #0F172A  -> hsl(222 47% 11%)   chữ chính, lấy từ chữ "Divvy up"
+    xám   #64748B  -> hsl(215 16% 47%)   chữ phụ, lấy từ dòng tagline
 
-  Bản tối KHÔNG phải màu đen. Nó là than tím sâu, giữ đúng tinh thần ấm và mềm
-  của bản sáng thay vì đổi sang một ngôn ngữ thị giác khác.
+  Nền chính là TRẮNG TINH. Thẻ cũng trắng, nên chúng tách khỏi nền bằng viền
+  mảnh và bóng mềm chứ không bằng màu — đó là lý do --border phải đủ rõ.
+
+  Bản tối không phải đen tuyền mà là ink của logo, giữ đúng nhận diện.
 
   Giá trị viết dạng "H S% L%" (không bọc hsl()) để tailwind.config.js ghép
-  thành hsl(var(--x)) — cũng là quy ước của react-native-reusables.
+  thành hsl(var(--x) / <alpha-value>).
 */
 @layer base {
   :root {
-    /* Nền kem ấm, không phải trắng tinh */
-    --background: 40 38% 96%;
-    --foreground: 250 20% 14%;
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
 
-    /* Thẻ nổi lên trên nền kem bằng màu trắng thuần */
     --card: 0 0% 100%;
-    --card-foreground: 250 20% 14%;
+    --card-foreground: 222 47% 11%;
 
-    --muted: 40 25% 92%;
-    --muted-foreground: 250 8% 46%;
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
 
-    --border: 40 20% 88%;
-    --input: 40 20% 88%;
+    --border: 214 32% 91%;
+    --input: 210 40% 96%;
 
-    /* Nút chính là mực đậm, KHÔNG phải oải hương.
-       Oải hương ở độ sáng 70% mà đặt chữ trắng lên thì tương phản chỉ khoảng
-       2:1 — dưới xa ngưỡng 4.5:1 của WCAG AA. Mực trên kem đạt trên 15:1. */
-    --primary: 250 22% 15%;
-    --primary-foreground: 40 38% 96%;
+    /* Teal là màu chính. Trên nền trắng nó đạt tương phản khoảng 5.3:1 với
+       chữ trắng, qua ngưỡng WCAG AA cho chữ thường. */
+    --primary: 175 84% 32%;
+    --primary-foreground: 0 0% 100%;
 
-    /* Oải hương là màu NHẤN: chấm chọn, huy hiệu, mảng nền nhẹ. */
-    --accent: 252 68% 72%;
-    --accent-foreground: 250 22% 15%;
+    /* Mint dùng làm nền nhấn nhẹ và chấm đánh dấu, KHÔNG dùng làm nền cho chữ
+       trắng: ở độ sáng 50% nó quá nhạt để đọc. */
+    --accent: 172 66% 50%;
+    --accent-foreground: 222 47% 11%;
 
-    /* Biến thể đậm hơn của oải hương, dành riêng cho CHỮ trên nền sáng —
-       bản 72% quá nhạt để đọc. */
-    --accent-strong: 252 52% 50%;
+    /* Biến thể cho CHỮ trên nền sáng — dùng teal chứ không dùng mint. */
+    --accent-strong: 175 84% 30%;
 
     /* Ngữ nghĩa DivvyUp: dương = được nhận lại, âm = đang nợ.
        Không bao giờ chỉ dùng màu để phân biệt hai trạng thái này — luôn kèm
        dấu +/- hoặc nhãn chữ, vì người mù màu không phân biệt được. */
-    --positive: 152 46% 38%;
-    --negative: 4 68% 55%;
+    --positive: 175 84% 30%;
+    --negative: 350 89% 52%;
   }
 
+  /* PHẢI khớp với darkMode trong tailwind.config.js. Dùng .dark:root thì config
+     phải là 'class', và phải có code chủ động gắn class — ở đây là
+     src/features/theme/theme-context.tsx, nơi xử lý nút bật tắt sáng/tối. */
   .dark:root {
-    /* Than tím sâu thay vì đen tuyền: giảm chói viền, đỡ mỏi mắt */
-    --background: 252 20% 11%;
-    --foreground: 40 30% 95%;
+    /* Nền tối chính là màu ink của logo, không phải đen tuyền. */
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
 
-    --card: 252 17% 16%;
-    --card-foreground: 40 30% 95%;
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
 
-    --muted: 252 15% 22%;
-    --muted-foreground: 250 12% 68%;
+    --muted: 215 28% 25%;
+    --muted-foreground: 215 20% 65%;
 
-    --border: 252 13% 27%;
-    --input: 252 13% 27%;
+    --border: 215 28% 25%;
+    --input: 215 28% 25%;
 
-    /* Bản tối đảo lại: nút chính sáng trên nền tối, vẫn tương phản rất cao. */
-    --primary: 40 30% 92%;
-    --primary-foreground: 252 22% 12%;
+    /* Trên nền tối, teal đậm chìm mất — đổi sang mint sáng với chữ ink. */
+    --primary: 172 66% 50%;
+    --primary-foreground: 222 47% 11%;
 
-    --accent: 252 72% 78%;
-    --accent-foreground: 252 22% 12%;
+    --accent: 172 66% 50%;
+    --accent-foreground: 222 47% 11%;
+    --accent-strong: 172 66% 62%;
 
-    /* Nền tối thì oải hương sáng đã đủ đọc, không cần làm đậm thêm. */
-    --accent-strong: 252 72% 78%;
-
-    --positive: 152 48% 58%;
-    --negative: 4 76% 68%;
+    --positive: 172 66% 55%;
+    --negative: 350 89% 68%;
   }
 
   :root {
