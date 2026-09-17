@@ -20,10 +20,6 @@ const OUT = path.join(process.cwd(), 'assets', 'images');
 const WHITE = { r: 255, g: 255, b: 255, alpha: 1 };
 const TRANSPARENT = { r: 0, g: 0, b: 0, alpha: 0 };
 
-const TEAL = '#0D9488';
-const MINT = '#2DD4BF';
-const CORAL = '#F43F5E';
-
 // Màu chữ trong file lockup gốc, thay khi dựng bản cho nền tối.
 const INK = '#0F172A';
 const TAGLINE = '#475569';
@@ -89,38 +85,6 @@ async function lockup(svg, width) {
 }
 
 
-/**
- * Ảnh phong cảnh mặc định cho chuyến đi chưa chọn địa điểm.
- *
- * Tự dựng bằng vector thay vì tải ảnh từ kho ngoài: không phụ thuộc khoá API,
- * không vướng giấy phép của ai, và nặng vài chục KB thay vì vài trăm.
- * Giao diện phủ một lớp đen mờ lên trên nên chi tiết không cần thật sắc.
- *
- * Muốn thay bằng ảnh chụp thật: ghi đè assets/images/trip-placeholder.png là xong,
- * không phải sửa code.
- */
-function placeholderSceneSvg(width, height) {
-  return Buffer.from(
-    `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 1200 800">
-      <defs>
-        <linearGradient id="sky" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0" stop-color="${MINT}"/>
-          <stop offset="0.55" stop-color="#A7F3E4"/>
-          <stop offset="1" stop-color="#F0FDFA"/>
-        </linearGradient>
-      </defs>
-      <rect width="1200" height="800" fill="url(#sky)"/>
-      <circle cx="900" cy="205" r="88" fill="${CORAL}" opacity="0.5"/>
-      <path d="M0 520 L180 400 L320 492 L470 360 L640 500 L820 392 L1000 500 L1200 420 L1200 800 L0 800 Z"
-            fill="${TEAL}" opacity="0.32"/>
-      <path d="M0 602 L220 470 L400 582 L580 458 L760 592 L980 478 L1200 580 L1200 800 L0 800 Z"
-            fill="${TEAL}" opacity="0.58"/>
-      <path d="M0 690 L260 578 L520 702 L760 598 L1000 700 L1200 638 L1200 800 L0 800 Z"
-            fill="${TEAL}"/>
-    </svg>`,
-  );
-}
-
 const targets = [
   // Icon trên màn hình chính: nền trắng, logo chừa lề vừa phải.
   { file: 'icon.png', make: () => framedMark(1024, 0.62, WHITE) },
@@ -142,15 +106,16 @@ const targets = [
 
   { file: 'favicon.png', make: () => framedMark(64, 0.92, WHITE) },
 
-  // Ảnh nền cho chuyến đi chưa chọn địa điểm.
-  // Xuất JPEG chứ không PNG: đây là ảnh kiểu chuyển sắc, JPEG nhỏ hơn PNG
-  // khoảng năm lần mà mắt không phân biệt được — nhất là khi bị phủ lớp đen mờ.
+  // Ảnh nền cho chuyến đi chưa chọn địa điểm: ảnh chụp thật trong
+  // assets/brand/trip-placeholder.jpg. Đổi ảnh thì thay file nguồn đó rồi chạy
+  // lại script — đừng sửa thẳng bản trong assets/images, lần chạy sau sẽ ghi đè.
+  // Thu về 1080px và nén lại: ảnh chỉ làm nền dưới lớp phủ tối, không cần nét hơn.
   {
     file: 'trip-placeholder.jpg',
     make: () =>
-      sharp(placeholderSceneSvg(1200, 800), { density: 200 })
-        .resize(1200, 800, { fit: 'cover' })
-        .jpeg({ quality: 82, mozjpeg: true })
+      sharp(path.join(BRAND, 'trip-placeholder.jpg'))
+        .resize(1080, 720, { fit: 'cover' })
+        .jpeg({ quality: 80, mozjpeg: true })
         .toBuffer(),
   },
 

@@ -11,7 +11,7 @@ import { PickerModal } from '@/components/ui/picker-modal';
 import { Screen } from '@/components/ui/screen';
 import { SectionCard } from '@/components/ui/section-card';
 import { SegmentedControl } from '@/components/ui/segmented-control';
-import { ErrorView, LoadingView } from '@/components/ui/state-views';
+import { ErrorView, LoadingView, NoticeView } from '@/components/ui/state-views';
 import { TextField } from '@/components/ui/text-field';
 import {
   createExpense,
@@ -364,6 +364,12 @@ export default function ExpenseFormScreen() {
           </>
         }>
         {loading && data === null ? <LoadingView /> : null}
+        {data?.detail?.settledAt ? (
+          <NoticeView
+            tone="info"
+            message="Khoản này đã đánh dấu xong nên đang không tính vào số dư. Lưu thay đổi sẽ bỏ đánh dấu và tính lại vào số dư — đánh dấu lại sau nếu mọi người đã trả đủ."
+          />
+        ) : null}
         {error ? <ErrorView message={error} onRetry={reload} /> : null}
 
         {data ? (

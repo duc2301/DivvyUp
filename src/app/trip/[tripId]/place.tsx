@@ -119,7 +119,7 @@ export default function TripPlaceScreen() {
     // Tìm theo tên kèm quốc gia để tránh trùng tên với nơi khác trên thế giới;
     // nếu không ra ảnh nào thì Edge Function tự lùi về riêng tên địa điểm.
     const term = chosen.country ? `${chosen.name} ${chosen.country}` : chosen.name;
-    fetchPlacePhotos(term, { limit: 12, fallback: chosen.name })
+    fetchPlacePhotos(term, { limit: 30, fallback: chosen.name })
       .then((found) => {
         if (photoRequestId.current !== requestId) return;
         setPhotos(found);

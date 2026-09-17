@@ -30,6 +30,9 @@ module.exports = {
         // Ngữ nghĩa riêng của DivvyUp: được nhận lại tiền / đang nợ tiền.
         positive: 'hsl(var(--positive) / <alpha-value>)',
         negative: 'hsl(var(--negative) / <alpha-value>)',
+        // Thời tiết: icon nắng/mưa.
+        sun: 'hsl(var(--sun) / <alpha-value>)',
+        rain: 'hsl(var(--rain) / <alpha-value>)',
       },
       fontFamily: {
         // Be Vietnam Pro thay cho Poppins: Poppins KHÔNG có dấu tiếng Việt tổ hợp

@@ -3,21 +3,27 @@ import { useCallback, useRef, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
-import { IconButton } from '@/components/ui/icon-button';
-import { Plus } from '@/components/ui/icons';
+import { Circle, CircleCheck, ChevronRight, Plus, QrCode } from '@/components/ui/icons';
+import type { PaymentTarget } from '@/components/ui/payment-sheet';
+import { PaymentSheet } from '@/components/ui/payment-sheet';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
 import { TripHero } from '@/components/ui/trip-hero';
+import { WeatherSummary } from '@/components/weather/weather-summary';
+import { useSessionContext } from '@/features/auth/session-context';
+import { useTripForecast } from '@/features/weather/use-trip-forecast';
 import type { ExpenseSummary } from '@/lib/data/expenses';
 import {
   getTrip,
   getTripBalances,
   listAllExpenses,
   listTripMembers,
+  setExpenseSettled,
   updateCoverIndex,
 } from '@/lib/data/manager';
-import { useAsync } from '@/lib/data/use-async';
+import { describeError, useAsync } from '@/lib/data/use-async';
 import { formatRelativeDateTime } from '@/lib/datetime';
 import { formatMoney, money, simplifyDebts, sumMoney } from '@/lib/money';
 
@@ -30,19 +36,6 @@ const TABS = [
 ];
 
 const NO_EXPENSES: readonly ExpenseSummary[] = [];
-
-/** Số ngày của chuyến, tính cả ngày đầu và ngày cuối. */
-function tripDayCount(startDate: string | null, endDate: string | null): number | null {
-  if (!startDate || !endDate) return null;
-  const toLocal = (value: string): Date => {
-    const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  };
-  const days = Math.round(
-    (toLocal(endDate).getTime() - toLocal(startDate).getTime()) / 86_400_000,
-  );
-  return days >= 0 ? days + 1 : null;
-}
 
 /**
  * Màn chuyến đi.
@@ -61,6 +54,10 @@ export default function TripScreen() {
   const tripId = Array.isArray(params.tripId) ? params.tripId[0] : params.tripId;
 
   const [tab, setTab] = useState<Tab>('expenses');
+  const [payment, setPayment] = useState<PaymentTarget | null>(null);
+  const [settlingId, setSettlingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+  const { userId: myUserId, isGuest } = useSessionContext();
 
   const { data, error, loading, reload } = useAsync(async () => {
     if (!tripId) throw new Error('Thiếu mã chuyến đi.');
@@ -85,8 +82,47 @@ export default function TripScreen() {
     }, [reload]),
   );
 
-  const nameOf = (memberId: string): string =>
-    data?.members.find((member) => member.id === memberId)?.displayName ?? 'Không rõ';
+  // Dự báo tự dùng bộ nhớ đệm 3 tiếng — tải lại màn chuyến đi không gọi mạng lại.
+  const weather = useTripForecast(data?.trip ?? null);
+
+  const memberOf = (memberId: string) => data?.members.find((member) => member.id === memberId);
+  const nameOf = (memberId: string): string => memberOf(memberId)?.displayName ?? 'Không rõ';
+
+  const settledCount = data ? data.expenses.filter((expense) => expense.settledAt).length : 0;
+
+  /**
+   * Cùng quy tắc với RPC set_expense_settled: đánh dấu xong = xoá nợ, nên chỉ
+   * người được nhận tiền (người đã trả), chủ chuyến, hoặc người ghi khoản chi khi
+   * người trả chưa vào app. Bỏ đánh dấu thì ai cũng được.
+   */
+  const canMarkSettled = (expense: ExpenseSummary): boolean => {
+    if (isGuest) return true;
+    const me = data?.members.find((member) => member.isMe);
+    if (me?.role === 'owner') return true;
+    const payer = memberOf(expense.paidByMemberId);
+    if (payer?.isMe) return true;
+    return payer !== undefined && !payer.claimed && expense.createdBy === myUserId;
+  };
+
+  const toggleSettled = async (expense: ExpenseSummary): Promise<void> => {
+    if (settlingId !== null) return;
+    if (expense.settledAt === null && !canMarkSettled(expense)) {
+      setActionError(
+        `Chỉ ${nameOf(expense.paidByMemberId)} (người đã trả) hoặc chủ chuyến mới đánh dấu "${expense.description}" là đã xong.`,
+      );
+      return;
+    }
+    setSettlingId(expense.id);
+    setActionError(null);
+    try {
+      await setExpenseSettled(expense.id, expense.settledAt === null);
+      reload();
+    } catch (caught) {
+      setActionError(describeError(caught));
+    } finally {
+      setSettlingId(null);
+    }
+  };
 
   const transfers = data ? simplifyDebts(data.balances) : [];
   const hasMembers = (data?.members.length ?? 0) > 0;
@@ -100,7 +136,6 @@ export default function TripScreen() {
       )
     : money(0, 'VND');
 
-  const dayCount = data ? tripDayCount(data.trip.startDate, data.trip.endDate) : null;
 
   const goToPlace = (): void => {
     if (!tripId) return;
@@ -142,22 +177,13 @@ export default function TripScreen() {
         onChangeIndex={(next) => {
           if (tripId) void updateCoverIndex(tripId, next).catch(() => undefined);
         }}
-        rightAction={
-          data ? (
-            <IconButton
-              icon={Plus}
-              label={hasMembers ? 'Thêm khoản chi' : 'Thêm thành viên trước khi ghi khoản chi'}
-              variant="primary"
-              onPress={addExpense}
-            />
-          ) : null
-        }
       />
 
       {/* Thẻ đè lên ảnh — chi tiết tạo nên bố cục trong thiết kế mẫu. */}
       <View className="-mt-7 rounded-t-3xl bg-background px-4 pt-5">
         {loading && data === null ? <LoadingView /> : null}
         {error ? <ErrorView message={error} onRetry={reload} /> : null}
+        {actionError ? <ErrorView message={actionError} /> : null}
 
         {data ? (
           <>
@@ -195,28 +221,12 @@ export default function TripScreen() {
               </View>
             </View>
 
-            <View className="mt-3 flex-row flex-wrap gap-2">
-              <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                {data.members.length} người
-              </Text>
-              {dayCount ? (
-                <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                  {dayCount} ngày
-                </Text>
-              ) : null}
-              <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                {data.trip.currency}
-              </Text>
-              {data.trip.joinCode !== '' ? (
-                <Text className="rounded-full bg-accent px-3 py-1 text-xs font-semibold text-accent-foreground">
-                  Mã {data.trip.joinCode}
-                </Text>
-              ) : (
-                <Text className="rounded-full bg-muted px-3 py-1 text-xs text-muted-foreground">
-                  Lưu cục bộ
-                </Text>
-              )}
-            </View>
+            <WeatherSummary
+              state={weather}
+              onOpen={() =>
+                router.push({ pathname: '/trip/[tripId]/weather', params: { tripId: data.trip.id } })
+              }
+            />
 
             <View className="mt-5">
               <SegmentedControl
@@ -227,18 +237,43 @@ export default function TripScreen() {
               />
             </View>
 
+            {/* Ngay dưới thanh tab, không nằm trên ảnh và không ở cuối danh
+                sách: luôn trong tầm tay, không bị cuộn mất khi có nhiều khoản. */}
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={hasMembers ? 'Thêm khoản chi' : 'Thêm thành viên trước khi ghi khoản chi'}
+              onPress={addExpense}
+              className="mt-3 min-h-12 flex-row items-center justify-center gap-2 rounded-full bg-primary px-5 active:opacity-80">
+              <Plus size={20} className="text-primary-foreground" />
+              <Text className="text-base font-semibold text-primary-foreground">
+                {hasMembers ? 'Thêm khoản chi' : 'Thêm thành viên trước'}
+              </Text>
+            </Pressable>
+
             <View className="mt-4 gap-3">
               {tab === 'expenses' && data.expenses.length === 0 ? (
                 <EmptyView
                   title="Chưa có khoản chi nào"
                   hint={
                     hasMembers
-                      ? 'Bấm nút ＋ ở góc trên bên phải để ghi khoản đầu tiên.'
+                      ? 'Bấm "Thêm khoản chi" ở trên để ghi khoản đầu tiên.'
                       : 'Thêm thành viên trước, rồi mới ghi được khoản chi.'
                   }
-                  actionLabel={hasMembers ? undefined : 'Thêm thành viên'}
-                  onAction={hasMembers ? undefined : addExpense}
                 />
+              ) : null}
+
+              {tab === 'expenses' && data.expenses.length > 0 && settledCount === 0 ? (
+                <Text className="px-1 text-xs text-muted-foreground">
+                  Chạm vòng tròn bên trái một khoản chi khi mọi người đã trả xong khoản đó.
+                </Text>
+              ) : null}
+
+              {tab === 'expenses' && settledCount > 0 ? (
+                <Text className="px-1 text-xs leading-5 text-muted-foreground">
+                  {settledCount} khoản đã xong không tính vào số dư. Chỉ đánh dấu khi mọi người đã
+                  trả đủ RIÊNG khoản đó — nếu trả theo "Chi tiết người trả" (đã gộp nhiều khoản) thì
+                  đánh dấu hết các khoản cùng lúc.
+                </Text>
               ) : null}
 
               {tab === 'balances' ? (
@@ -253,7 +288,13 @@ export default function TripScreen() {
                       data.balances.map((balance) => (
                         <View
                           key={balance.participantId}
-                          className="flex-row items-center justify-between py-2">
+                          className="flex-row items-center gap-3 py-2">
+                          <Avatar
+                            name={balance.displayName}
+                            uri={memberOf(balance.participantId)?.avatarUrl}
+                            size="sm"
+                            pending={!memberOf(balance.participantId)?.claimed}
+                          />
                           <Text className="min-w-0 flex-1 text-base text-foreground">
                             {balance.displayName}
                           </Text>
@@ -274,6 +315,11 @@ export default function TripScreen() {
                         </View>
                       ))
                     )}
+                    {settledCount > 0 ? (
+                      <Text className="mt-2 text-xs text-muted-foreground">
+                        Không tính {settledCount} khoản chi đã đánh dấu xong.
+                      </Text>
+                    ) : null}
                   </View>
 
                   {transfers.length > 0 ? (
@@ -281,20 +327,46 @@ export default function TripScreen() {
                       <Text className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                         Chi tiết người trả
                       </Text>
-                      {transfers.map((transfer, index) => (
-                        <View
-                          key={`${transfer.from}-${transfer.to}-${index}`}
-                          className="flex-row items-center justify-between py-2">
-                          <Text className="min-w-0 flex-1 text-base text-foreground">
-                            {nameOf(transfer.from)} → {nameOf(transfer.to)}
-                          </Text>
-                          <Text
-                            numberOfLines={1}
-                            className="pl-3 text-base font-semibold text-foreground">
-                            {formatMoney(transfer.amount)}
-                          </Text>
-                        </View>
-                      ))}
+                      <Text className="mb-1 text-xs text-muted-foreground">
+                        Chạm một dòng để xem mã QR nhận tiền của người nhận.
+                      </Text>
+                      {transfers.map((transfer, index) => {
+                        const receiver = memberOf(transfer.to);
+                        return (
+                          <Pressable
+                            key={`${transfer.from}-${transfer.to}-${index}`}
+                            accessibilityRole="button"
+                            accessibilityLabel={`${nameOf(transfer.from)} chuyển ${formatMoney(transfer.amount)} cho ${nameOf(transfer.to)}. Xem mã QR`}
+                            onPress={() =>
+                              setPayment({
+                                fromName: nameOf(transfer.from),
+                                toName: nameOf(transfer.to),
+                                toUserId: receiver?.userId ?? null,
+                                toAvatarUrl: receiver?.avatarUrl ?? null,
+                                amount: transfer.amount,
+                              })
+                            }
+                            className="-mx-2 flex-row items-center gap-3 rounded-xl px-2 py-2.5 active:bg-muted">
+                            <Avatar
+                              name={nameOf(transfer.to)}
+                              uri={receiver?.avatarUrl}
+                              size="sm"
+                              pending={!receiver?.claimed}
+                            />
+                            <View className="min-w-0 flex-1">
+                              <Text numberOfLines={2} className="text-base text-foreground">
+                                {nameOf(transfer.from)} → {nameOf(transfer.to)}
+                              </Text>
+                            </View>
+                            <Text
+                              numberOfLines={1}
+                              className="text-base font-semibold text-foreground">
+                              {formatMoney(transfer.amount)}
+                            </Text>
+                            <QrCode size={18} className="text-muted-foreground" />
+                          </Pressable>
+                        );
+                      })}
                     </View>
                   ) : null}
                 </>
@@ -307,36 +379,47 @@ export default function TripScreen() {
                       <Text className="text-sm text-muted-foreground">Chưa có ai.</Text>
                     ) : (
                       data.members.map((member) => (
-                        <View
-                          key={member.id}
-                          className="flex-row items-center justify-between py-2">
+                        <View key={member.id} className="flex-row items-center gap-3 py-2">
+                          <Avatar
+                            name={member.displayName}
+                            uri={member.avatarUrl}
+                            pending={!member.claimed}
+                          />
                           <Text className="min-w-0 flex-1 text-base text-foreground">
                             {member.displayName}
                           </Text>
                           {member.isMe ? (
-                            <Text className="rounded-lg bg-accent px-2 py-1 text-xs font-semibold text-accent-foreground">
-                              bạn
+                            <Text className="rounded-full bg-accent px-2.5 py-1 text-xs font-semibold text-accent-foreground">
+                              Bạn
                             </Text>
                           ) : member.claimed ? (
-                            <Text className="rounded-lg bg-muted px-2 py-1 text-xs text-muted-foreground">
-                              đã vào app
+                            <Text className="rounded-full bg-muted px-2.5 py-1 text-xs text-muted-foreground">
+                              Đã vào app
                             </Text>
-                          ) : null}
+                          ) : (
+                            <Text className="rounded-full border border-dashed border-border px-2.5 py-1 text-xs text-muted-foreground">
+                              Chưa nhận
+                            </Text>
+                          )}
                         </View>
                       ))
                     )}
                   </View>
 
-                  <Button
-                    label="Quản lý thành viên & nhóm"
-                    variant="secondary"
+                  <Pressable
+                    accessibilityRole="button"
                     onPress={() =>
                       router.push({
                         pathname: '/trip/[tripId]/members',
                         params: { tripId: data.trip.id },
                       })
                     }
-                  />
+                    className="flex-row items-center justify-between rounded-2xl border border-border bg-card px-4 py-3.5 active:bg-muted">
+                    <Text className="text-base font-medium text-foreground">
+                      Quản lý thành viên & nhóm
+                    </Text>
+                    <ChevronRight size={20} className="text-muted-foreground" />
+                  </Pressable>
                 </>
               ) : null}
             </View>
@@ -357,30 +440,63 @@ export default function TripScreen() {
         keyboardShouldPersistTaps="handled"
         renderItem={({ item: expense }) => (
           <View className="px-4 pt-3">
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel={`Sửa khoản chi ${expense.description}`}
-              onPress={() => openExpense(expense.id)}
-              className="rounded-2xl border border-border bg-card p-4 active:bg-muted">
-              <View className="flex-row items-start justify-between gap-3">
-                <Text className="min-w-0 flex-1 text-base font-medium text-foreground">
-                  {expense.description}
-                </Text>
-                <Text numberOfLines={1} className="text-base font-semibold text-foreground">
-                  {formatMoney(expense.total)}
-                </Text>
-              </View>
-              <View className="mt-1 flex-row items-center justify-between">
-                <Text className="min-w-0 flex-1 text-xs text-muted-foreground">
-                  {nameOf(expense.paidByMemberId)} ứng ·{' '}
-                  {formatRelativeDateTime(new Date(expense.paidAt))}
-                </Text>
-                <Text className="pl-2 text-xs font-medium text-accent-strong">Sửa ›</Text>
-              </View>
-            </Pressable>
+            <View
+              // items-stretch: vùng bấm vòng tròn cao bằng cả dòng, kể cả khi mô
+              // tả dài xuống hai dòng — không có vùng "trông bấm được mà trượt".
+              className={`flex-row items-stretch rounded-2xl border border-border bg-card ${
+                expense.settledAt ? 'opacity-60' : ''
+              }`}>
+              {/* Nút riêng, tách khỏi vùng bấm để sửa: chạm nhầm cả dòng không
+                  được âm thầm đổi số dư của cả nhóm. */}
+              <Pressable
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: expense.settledAt !== null, busy: settlingId === expense.id }}
+                accessibilityLabel={`Đánh dấu ${expense.description} đã xong`}
+                disabled={settlingId !== null}
+                onPress={() => void toggleSettled(expense)}
+                hitSlop={4}
+                className="min-h-16 w-14 items-center justify-center rounded-l-2xl active:bg-muted">
+                {expense.settledAt ? (
+                  <CircleCheck size={24} className="text-positive" />
+                ) : (
+                  <Circle size={24} className="text-muted-foreground" />
+                )}
+              </Pressable>
+
+              <Pressable
+                accessibilityRole="button"
+                accessibilityLabel={`Sửa khoản chi ${expense.description}`}
+                onPress={() => openExpense(expense.id)}
+                className="min-w-0 flex-1 rounded-r-2xl py-4 pr-4 active:bg-muted">
+                <View className="flex-row items-start justify-between gap-3">
+                  <Text
+                    className={`min-w-0 flex-1 text-base font-medium text-foreground ${
+                      expense.settledAt ? 'line-through' : ''
+                    }`}>
+                    {expense.description}
+                  </Text>
+                  <Text numberOfLines={1} className="text-base font-semibold text-foreground">
+                    {formatMoney(expense.total)}
+                  </Text>
+                </View>
+                <View className="mt-1 flex-row items-center justify-between">
+                  <Text className="min-w-0 flex-1 text-xs text-muted-foreground">
+                    {nameOf(expense.paidByMemberId)} ứng ·{' '}
+                    {formatRelativeDateTime(new Date(expense.paidAt))}
+                  </Text>
+                  {expense.settledAt ? (
+                    <Text className="pl-2 text-xs font-semibold text-positive">Đã xong</Text>
+                  ) : (
+                    <Text className="pl-2 text-xs font-medium text-accent-strong">Sửa ›</Text>
+                  )}
+                </View>
+              </Pressable>
+            </View>
           </View>
         )}
       />
+
+      <PaymentSheet target={payment} guest={isGuest} onClose={() => setPayment(null)} />
     </View>
   );
 }

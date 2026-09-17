@@ -1,7 +1,7 @@
 /**
  * Ảnh minh hoạ cho địa điểm — một cổng, nhiều nguồn.
  *
- * Gọi: POST { query: string, limit?: number, countryCode?: string }
+ * Gọi: POST { query: string, limit?: number (1–30, mặc định 30), countryCode?: string }
  * Trả: { photos: Photo[], provider: 'pinterest' | 'unsplash' }
  *
  * THỨ TỰ ƯU TIÊN
@@ -210,7 +210,7 @@ Deno.serve(async (req) => {
 
   let query = '';
   let fallback = '';
-  let limit = 12;
+  let limit = 30;
   let countryCode = 'VN';
   try {
     const body = await req.json();

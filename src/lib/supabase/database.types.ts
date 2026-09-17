@@ -39,11 +39,22 @@ export interface Database {
           id: string;
           display_name: string;
           avatar_url: string | null;
+          /** Đường dẫn trong bucket `avatars`, luôn bắt đầu bằng `<id>/`. */
+          avatar_path: string | null;
+          /** Đường dẫn trong bucket riêng tư `payment-qr`. */
+          payment_qr_path: string | null;
+          payment_note: string | null;
           created_at: string;
           updated_at: string;
         };
         Insert: { id: string; display_name: string; avatar_url?: string | null };
-        Update: { display_name?: string; avatar_url?: string | null };
+        Update: {
+          display_name?: string;
+          avatar_url?: string | null;
+          avatar_path?: string | null;
+          payment_qr_path?: string | null;
+          payment_note?: string | null;
+        };
         Relationships: [];
       };
 
@@ -179,6 +190,13 @@ export interface Database {
             referencedRelation: 'trip_groups';
             referencedColumns: ['id', 'trip_id'];
           },
+          {
+            foreignKeyName: 'trip_members_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
         ];
       };
 
@@ -196,6 +214,9 @@ export interface Database {
           created_at: string;
           updated_at: string;
           deleted_at: string | null;
+          /** Khác null = "đã xong", không tính vào số dư. Đổi qua RPC set_expense_settled. */
+          settled_at: string | null;
+          settled_by: string | null;
         };
         // Không có policy INSERT: tạo khoản chi phải qua RPC create_expense().
         Insert: ReadOnly;
@@ -323,6 +344,10 @@ export interface Database {
       };
       void_expense: {
         Args: { p_expense_id: string };
+        Returns: undefined;
+      };
+      set_expense_settled: {
+        Args: { p_expense_id: string; p_settled: boolean };
         Returns: undefined;
       };
       preview_trip_by_code: {

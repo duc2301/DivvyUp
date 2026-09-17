@@ -10,8 +10,11 @@
 
 - **Chuyến đi → nhóm → thành viên.** Tạo nhóm với số người khai sẵn, đặt tên từng người. Người trong chuyến chưa cần cài app: gửi **mã mời** sau để họ nhận đúng tên của mình.
 - **Khoản chi.** Mặc định chia đều cho cả chuyến, bỏ bớt người không chịu, hoặc gõ số tiền riêng từng người. Có một người đại diện đứng ra trả. Sửa và xoá được (xoá có hỏi lại).
-- **Số dư & ai trả ai.** Số dư được tính ở database từ dữ liệu gốc. App gợi ý số giao dịch ít nhất để trả hết nợ.
+- **Số dư & ai trả ai.** Số dư được tính ở database từ dữ liệu gốc. App gợi ý số giao dịch ít nhất để trả hết nợ. Chạm một dòng để xem **mã QR nhận tiền** của người nhận.
+- **Đánh dấu khoản chi đã xong.** Khoản đã xong không tính vào số dư (vẫn tính vào tổng chi). Chỉ người đã trả tiền khoản đó hoặc chủ chuyến mới đánh dấu được; sửa khoản chi thì tự bỏ đánh dấu.
+- **Hồ sơ.** Ảnh đại diện (hiện cạnh tên trong mọi chuyến đã tham gia), mã QR và ghi chú nhận tiền — chỉ người đi chung chuyến mới xem được.
 - **Điểm đến & ảnh bìa.** Tìm địa điểm bằng Mapbox, ảnh bìa lấy từ Unsplash (Pinterest nếu có quyền). Lướt để chọn ảnh làm nền.
+- **Dự báo thời tiết** cho điểm đến, có từ 7 ngày trước chuyến đi: một dòng tóm tắt dưới địa điểm, chạm vào xem theo giờ, nhiều ngày (biểu đồ/danh sách) và chất lượng không khí. Dữ liệu Open-Meteo (miễn phí, không cần khoá), lưu tạm 3 tiếng hoặc bấm làm mới.
 - **Tài khoản.** Đăng ký có xác nhận email, ghi nhớ đăng nhập, quên mật khẩu. Hoặc **dùng không cần tài khoản** (chế độ khách, dữ liệu chỉ nằm trên máy).
 - Giao diện sáng/tối, tiếng Việt.
 
@@ -73,6 +76,8 @@ Mở **SQL Editor**, chạy lần lượt các file trong `supabase/migrations/`
 
 > ⚠️ Không chạy lại `20260916_1040_lock_trip_members.sql` **sau** `20260917_1000_harden_members_settlements.sql`: nó ghi đè trigger bằng bản cũ và làm hỏng việc thêm thành viên.
 
+Migration `20260917_1100_profile_payment_settled.sql` tự tạo hai bucket Storage kèm policy: `avatars` (công khai) và `payment-qr` (riêng tư). Không cần tạo tay trên dashboard.
+
 `supabase/verify.sql` dùng để kiểm tra nhanh sau khi chạy.
 `supabase/cleanup-before-release.sql` xoá toàn bộ chuyến đi và khoản chi, **giữ tài khoản**. Chỉ dùng khi dọn dữ liệu thử.
 
@@ -86,6 +91,8 @@ npx supabase secrets set MAPBOX_TOKEN=... UNSPLASH_ACCESS_KEY=...
 npx supabase functions deploy place-search
 npx supabase functions deploy place-photos
 ```
+
+Ảnh bìa lấy tối đa 30 tấm mỗi địa điểm (giới hạn của Unsplash cho một lần tìm).
 
 ### 3. Auth
 

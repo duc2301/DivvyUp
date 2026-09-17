@@ -42,6 +42,9 @@ interface TripHeroProps {
 
 const HERO_HEIGHT = 280;
 
+/** Quá số ảnh này thì đổi hàng chấm sang bộ đếm. */
+const MAX_DOTS = 10;
+
 /** Web không có sự kiện "hết quán tính" — coi như đã dừng sau từng này ms không cuộn. */
 const WEB_SCROLL_SETTLE_MS = 160;
 
@@ -205,8 +208,15 @@ export function TripHero({
         {rightAction ?? null}
       </View>
 
-      {/* Chấm chỉ vị trí, chỉ hiện khi có nhiều hơn một ảnh. */}
-      {images.length > 1 ? (
+      {/* Vị trí ảnh: ít ảnh thì chấm, nhiều ảnh (tới 30) thì bộ đếm — 30 chấm
+          chen nhau thành một vạch, không còn đọc được đang ở ảnh nào. */}
+      {images.length > MAX_DOTS ? (
+        <View className="absolute bottom-[68px] left-0 right-0 items-center">
+          <Text className="rounded-full bg-black/45 px-2.5 py-0.5 text-xs font-semibold text-white">
+            {index + 1}/{images.length}
+          </Text>
+        </View>
+      ) : images.length > 1 ? (
         <View className="absolute bottom-[68px] left-0 right-0 flex-row justify-center gap-1.5">
           {images.map((image, dotIndex) => (
             <View

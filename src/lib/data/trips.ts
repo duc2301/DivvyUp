@@ -15,6 +15,8 @@ import { supabase } from '@/lib/supabase/client';
 import type { Database, TripRole } from '@/lib/supabase/database.types';
 import { DataError, unwrap, unwrapVoid } from '@/lib/supabase/errors';
 
+import { avatarUrlFromPath } from './profile';
+
 /** Điểm đến của chuyến đi, chọn từ Mapbox. */
 export interface TripPlace {
   readonly name: string;
@@ -75,6 +77,10 @@ export interface TripMember {
   readonly claimed: boolean;
   /** true nếu chỗ này là của chính người đang đăng nhập. */
   readonly isMe: boolean;
+  /** Tài khoản đã nhận chỗ này, null nếu chưa ai nhận (hoặc chế độ khách). */
+  readonly userId: string | null;
+  /** Ảnh đại diện của tài khoản đã nhận chỗ; chỗ chưa ai nhận thì luôn null. */
+  readonly avatarUrl: string | null;
 }
 
 export function parseCurrency(value: string): CurrencyCode {
@@ -337,7 +343,10 @@ export async function listTripMembers(tripId: string): Promise<TripMember[]> {
   const rows = unwrap(
     await supabase
       .from('trip_members')
-      .select('id, display_name, group_id, user_id, role, sort_order')
+      // Nhúng profile để lấy ảnh đại diện trong CÙNG một truy vấn, thay vì một
+      // lượt gọi cho mỗi người. RLS của profiles chỉ trả về người đi chung
+      // chuyến, đúng tập người đang được liệt kê ở đây.
+      .select('id, display_name, group_id, user_id, role, sort_order, profile:profiles(avatar_path)')
       .eq('trip_id', tripId)
       .is('removed_at', null)
       .order('sort_order'),
@@ -351,6 +360,8 @@ export async function listTripMembers(tripId: string): Promise<TripMember[]> {
     sortOrder: row.sort_order,
     claimed: row.user_id !== null,
     isMe: myUserId !== null && row.user_id === myUserId,
+    userId: row.user_id,
+    avatarUrl: row.user_id !== null ? avatarUrlFromPath(row.profile?.avatar_path) : null,
   }));
 }
 

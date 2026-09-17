@@ -119,8 +119,9 @@ export async function updateCoverIndex(tripId: string, index: number): Promise<v
 }
 
 export async function listTripGroups(tripId: string): Promise<TripGroup[]> {
-  // Chế độ khách chưa có nhóm: mọi thành viên nằm chung một danh sách.
-  if (await isGuestMode()) return [];
+  if (await isGuestMode()) {
+    return (await localStore.listGroups(tripId)).map(({ id, name, sortOrder }) => ({ id, name, sortOrder }));
+  }
   return remoteTrips.listTripGroups(tripId);
 }
 
@@ -129,7 +130,34 @@ export async function createTripGroup(
   name: string,
   memberCount: number,
 ): Promise<string> {
-  if (await isGuestMode()) return guestUnsupported('tạo nhóm');
+  if (await isGuestMode()) {
+    // Cùng hành vi với RPC create_trip_group: tạo nhóm kèm N chỗ tên tạm.
+    const groupName = name.trim();
+    if (groupName === '') throw new DataError('Tên nhóm không được để trống.');
+    if (!Number.isInteger(memberCount) || memberCount < 0 || memberCount > 100) {
+      throw new DataError('Số người trong nhóm phải từ 0 tới 100.');
+    }
+    const groups = await localStore.listGroups(tripId);
+    const groupId = localId();
+    await localStore.saveGroup({ id: groupId, tripId, name: groupName, sortOrder: groups.length });
+
+    const existing = await localStore.listMembers(tripId);
+    for (let index = 0; index < memberCount; index += 1) {
+      await localStore.saveMember({
+        id: localId(),
+        tripId,
+        displayName: `Thành viên ${index + 1}`,
+        groupId,
+        role: 'member',
+        sortOrder: existing.length + index,
+        claimed: false,
+        isMe: existing.length === 0 && index === 0,
+        userId: null,
+        avatarUrl: null,
+      });
+    }
+    return groupId;
+  }
   return remoteTrips.createTripGroup(tripId, name, memberCount);
 }
 
@@ -159,6 +187,8 @@ export async function addTripMember(
       // Chế độ khách chỉ có một người dùng thiết bị, nên người đầu tiên được
       // coi là "bạn" để màn khoản chi có mặc định hợp lý cho người ứng tiền.
       isMe: existing.length === 0,
+      userId: null,
+      avatarUrl: null,
     };
     await localStore.saveMember(member);
     return member.id;
@@ -180,7 +210,12 @@ export async function renameTripMember(memberId: string, displayName: string): P
 }
 
 export async function moveMemberToGroup(memberId: string, groupId: string | null): Promise<void> {
-  if (await isGuestMode()) return guestUnsupported('chuyển nhóm');
+  if (await isGuestMode()) {
+    const found = (await localStore.listAllMembers()).find((item) => item.id === memberId);
+    if (!found) throw new DataError('Không tìm thấy thành viên.');
+    await localStore.saveMember({ ...found, groupId });
+    return;
+  }
   await remoteTrips.moveMemberToGroup(memberId, groupId);
 }
 
@@ -211,7 +246,21 @@ function toSummary(expense: StoredExpense): ExpenseSummary {
     splitMode: expense.splitMode,
     paidAt: expense.paidAt,
     createdBy: expense.createdBy,
+    settledAt: expense.settledAt ?? null,
   };
+}
+
+export async function setExpenseSettled(expenseId: string, settled: boolean): Promise<void> {
+  if (await isGuestMode()) {
+    const found = (await localStore.listAllExpenses()).find((item) => item.id === expenseId);
+    if (!found) throw new DataError('Không tìm thấy khoản chi.');
+    await localStore.saveExpense({
+      ...found,
+      settledAt: settled ? (found.settledAt ?? new Date().toISOString()) : null,
+    });
+    return;
+  }
+  await remoteExpenses.setExpenseSettled(expenseId, settled);
 }
 
 export async function listExpenses(
@@ -303,6 +352,9 @@ export async function updateExpense(expenseId: string, input: SaveExpenseInput):
       splitMode: input.splitMode,
       paidAt: (input.paidAt ?? new Date()).toISOString(),
       shares: input.shares,
+      // Cùng quy tắc với update_expense trên server: sửa là bỏ đánh dấu xong,
+      // để số tiền mới được tính lại vào số dư.
+      settledAt: null,
     });
     return;
   }
@@ -331,7 +383,8 @@ export async function getTripBalances(tripId: string): Promise<NamedBalance[]> {
     // ép sẵn bất biến "tổng tiền ứng = tổng phần chia" cho từng khoản chi, nên
     // dữ liệu cục bộ hỏng sẽ bị bắt chứ không âm thầm cho ra số dư sai.
     const balances = computeBalances(
-      expenses.map((expense) => ({
+      // Khoản "đã xong" không tính vào số dư — cùng quy tắc với view trip_balances.
+      expenses.filter((expense) => !expense.settledAt).map((expense) => ({
         id: expense.id,
         payments: [{ participantId: expense.paidByMemberId, amount: expense.total }],
         shares: expense.shares,

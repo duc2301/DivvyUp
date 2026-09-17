@@ -2,7 +2,7 @@
   "expo": {
     "name": "DivvyUp",
     "slug": "DivvyUp",
-    "version": "1.0.0",
+    "version": "1.0.1",
     "runtimeVersion": {
       "policy": "fingerprint"
     },
@@ -45,6 +45,14 @@
             "backgroundColor": "#FFFFFF",
             "image": "./assets/images/splash-icon.png"
           }
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "DivvyUp cần truy cập ảnh để bạn chọn ảnh đại diện và ảnh mã QR nhận tiền.",
+          "cameraPermission": false,
+          "microphonePermission": false
         }
       ]
     ],

@@ -2,7 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { Money, SplitLine } from '@/lib/money';
 import type { SplitModeDb } from '@/lib/supabase/database.types';
-import type { TripCoverImage, TripMember, TripSummary } from '@/lib/data/trips';
+import type { TripCoverImage, TripGroup, TripMember, TripSummary } from '@/lib/data/trips';
 
 /**
  * Kho lưu trữ cục bộ cho chế độ khách.
@@ -34,6 +34,12 @@ export interface StoredExpense {
   readonly paidAt: string;
   readonly createdBy: string;
   readonly shares: readonly SplitLine[];
+  /** Bản app cũ không có trường này — đọc thiếu thì coi như chưa xong. */
+  readonly settledAt?: string | null;
+}
+
+export interface StoredGroup extends TripGroup {
+  readonly tripId: string;
 }
 
 /**
@@ -100,6 +106,7 @@ export class LocalStore {
     trips: 'divvyup_local_trips',
     members: 'divvyup_local_members',
     expenses: 'divvyup_local_expenses',
+    groups: 'divvyup_local_groups',
   };
 
   async get<T>(key: string): Promise<T[]> {
@@ -150,9 +157,28 @@ export class LocalStore {
 
   async listMembers(tripId: string): Promise<StoredMember[]> {
     const all = await this.listAllMembers();
-    return all
-      .filter((member) => member.tripId === tripId)
-      .sort((a, b) => a.sortOrder - b.sortOrder);
+    return (
+      all
+        .filter((member) => member.tripId === tripId)
+        .sort((a, b) => a.sortOrder - b.sortOrder)
+        // Khách không có tài khoản: không ai "nhận chỗ", không có ảnh đại diện.
+        // Bù hai trường mà dữ liệu lưu từ bản app cũ chưa có.
+        .map((member) => ({ ...member, groupId: member.groupId ?? null, userId: null, avatarUrl: null }))
+    );
+  }
+
+  // --- Groups ---
+  async listGroups(tripId: string): Promise<StoredGroup[]> {
+    const all = await this.get<StoredGroup>(this.keys.groups);
+    return all.filter((group) => group.tripId === tripId).sort((a, b) => a.sortOrder - b.sortOrder);
+  }
+
+  async saveGroup(group: StoredGroup): Promise<void> {
+    const groups = await this.get<StoredGroup>(this.keys.groups);
+    const index = groups.findIndex((item) => item.id === group.id);
+    if (index > -1) groups[index] = group;
+    else groups.push(group);
+    await this.set(this.keys.groups, groups);
   }
 
   async saveMember(member: StoredMember): Promise<void> {

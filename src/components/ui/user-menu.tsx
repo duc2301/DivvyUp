@@ -1,3 +1,4 @@
+import { useRouter } from 'expo-router';
 import { useState } from 'react';
 import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -5,7 +6,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { signOut } from '@/features/auth/auth-actions';
 import { useSessionContext } from '@/features/auth/session-context';
 import { useTheme } from '@/features/theme/theme-context';
+import { getMyProfile } from '@/lib/data/profile';
+import { useAsync } from '@/lib/data/use-async';
 
+import { Avatar } from './avatar';
 import { IconButton } from './icon-button';
 import type { LucideIcon } from './icons';
 import { CircleUserRound, LogIn, LogOut, Moon, Sun, UserRound } from './icons';
@@ -58,8 +62,14 @@ function MenuItem({
  * header — header màn chính còn phải chứa nút tạo chuyến và tham gia bằng mã.
  */
 export function UserMenu() {
+  const router = useRouter();
   const insets = useSafeAreaInsets();
   const { session, isGuest, setGuestMode } = useSessionContext();
+  const userId = session?.user.id ?? null;
+
+  // Lấy ảnh đại diện để hiện trên header. Tải lại mỗi lần mở menu, vì người
+  // dùng vừa đổi ảnh ở màn Hồ sơ rồi quay về thì ảnh cũ vẫn còn trong state.
+  const profile = useAsync(async () => (userId ? getMyProfile() : null), [userId]);
   const { effective, toggle } = useTheme();
   const [open, setOpen] = useState(false);
   const [signingOut, setSigningOut] = useState(false);
@@ -67,11 +77,13 @@ export function UserMenu() {
   const user = session?.user ?? null;
   const metadataName: unknown = user?.user_metadata?.display_name;
   const displayName =
-    typeof metadataName === 'string' && metadataName.trim() !== ''
+    profile.data?.displayName ??
+    (typeof metadataName === 'string' && metadataName.trim() !== ''
       ? metadataName
       : isGuest
         ? 'Khách'
-        : 'Tài khoản';
+        : 'Tài khoản');
+  const avatarUrl = profile.data?.avatarUrl ?? null;
   const subtitle = isGuest ? 'Dữ liệu chỉ lưu trên máy này' : (user?.email ?? '');
 
   const close = (): void => {
@@ -95,7 +107,27 @@ export function UserMenu() {
 
   return (
     <>
-      <IconButton icon={CircleUserRound} label="Tài khoản" onPress={() => setOpen(true)} />
+      {avatarUrl ? (
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Tài khoản"
+          onPress={() => {
+            profile.reload();
+            setOpen(true);
+          }}
+          className="h-11 w-11 items-center justify-center rounded-full active:opacity-60">
+          <Avatar name={displayName} uri={avatarUrl} size="sm" />
+        </Pressable>
+      ) : (
+        <IconButton
+          icon={CircleUserRound}
+          label="Tài khoản"
+          onPress={() => {
+            if (userId) profile.reload();
+            setOpen(true);
+          }}
+        />
+      )}
 
       <Modal visible={open} transparent animationType="fade" onRequestClose={close}>
         <Pressable
@@ -109,9 +141,13 @@ export function UserMenu() {
           style={{ top: insets.top + 60 }}
           className="absolute right-4 w-72 max-w-[90%] gap-1 rounded-2xl border border-border bg-card p-2 shadow-lg">
           <View className="flex-row items-center gap-3 px-3 pb-2 pt-2">
-            <View className="h-10 w-10 items-center justify-center rounded-full bg-accent">
-              <UserRound size={20} className="text-accent-foreground" />
-            </View>
+            {isGuest ? (
+              <View className="h-10 w-10 items-center justify-center rounded-full bg-accent">
+                <UserRound size={20} className="text-accent-foreground" />
+              </View>
+            ) : (
+              <Avatar name={displayName} uri={avatarUrl} size="md" />
+            )}
             <View className="min-w-0 flex-1">
               <Text numberOfLines={1} className="text-base font-semibold text-foreground">
                 {displayName}
@@ -126,7 +162,16 @@ export function UserMenu() {
 
           <View className="mx-3 mb-1 h-px bg-border" />
 
-          <MenuItem icon={UserRound} label="Hồ sơ" detail="Sắp có" disabled />
+          <MenuItem
+            icon={UserRound}
+            label="Hồ sơ"
+            detail={isGuest ? 'Cần đăng nhập' : undefined}
+            disabled={isGuest}
+            onPress={() => {
+              setOpen(false);
+              router.push('/profile');
+            }}
+          />
           <MenuItem
             icon={effective === 'light' ? Moon : Sun}
             label={effective === 'light' ? 'Chế độ tối' : 'Chế độ sáng'}

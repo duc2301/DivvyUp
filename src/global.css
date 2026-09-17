@@ -53,6 +53,11 @@
        dấu +/- hoặc nhãn chữ, vì người mù màu không phân biệt được. */
     --positive: 175 84% 30%;
     --negative: 350 89% 52%;
+
+    /* Thời tiết: màu icon nắng/mưa và sắc nền nhẹ của thẻ dự báo. Không dùng
+       làm màu chữ thường. */
+    --sun: 38 92% 50%;
+    --rain: 205 90% 45%;
   }
 
   /* PHẢI khớp với darkMode trong tailwind.config.js. Dùng .dark:root thì config
@@ -82,6 +87,9 @@
 
     --positive: 172 66% 55%;
     --negative: 350 89% 68%;
+
+    --sun: 43 96% 58%;
+    --rain: 199 89% 62%;
   }
 
   :root {

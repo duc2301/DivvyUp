@@ -24,6 +24,8 @@ export interface ExpenseSummary {
   readonly splitMode: SplitModeDb;
   readonly paidAt: string;
   readonly createdBy: string;
+  /** Khác null = đã xong: vẫn hiện, vẫn tính vào tổng chi, KHÔNG tính vào số dư. */
+  readonly settledAt: string | null;
 }
 
 export interface ExpenseDetail extends ExpenseSummary {
@@ -128,7 +130,7 @@ export async function voidExpense(expenseId: string): Promise<void> {
 }
 
 const EXPENSE_COLUMNS =
-  'id, description, amount_minor, currency, paid_by, split_mode, paid_at, created_by';
+  'id, description, amount_minor, currency, paid_by, split_mode, paid_at, created_by, settled_at';
 
 export async function listExpenses(
   tripId: string,
@@ -158,7 +160,15 @@ export async function listExpenses(
     splitMode: row.split_mode,
     paidAt: row.paid_at,
     createdBy: row.created_by,
+    settledAt: row.settled_at,
   }));
+}
+
+/** Đánh dấu / bỏ đánh dấu "đã xong". */
+export async function setExpenseSettled(expenseId: string, settled: boolean): Promise<void> {
+  unwrapVoid(
+    await supabase.rpc('set_expense_settled', { p_expense_id: expenseId, p_settled: settled }),
+  );
 }
 
 /** Một khoản chi kèm phần chia — dùng cho màn hình sửa. */
@@ -184,6 +194,7 @@ export async function getExpenseDetail(expenseId: string): Promise<ExpenseDetail
     splitMode: row.split_mode,
     paidAt: row.paid_at,
     createdBy: row.created_by,
+    settledAt: row.settled_at,
     shares: shareRows.map((share) => ({
       participantId: share.member_id,
       amount: money(toSafeMinor(share.amount_minor, 'amount_minor'), currency),

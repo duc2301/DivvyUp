@@ -98,7 +98,7 @@ export async function fetchPlacePhotos(
       // Từ khoá rút gọn dùng khi từ khoá đầy đủ không ra ảnh nào — thường là
       // tên địa điểm bỏ phần tên nước.
       fallback: options.fallback ?? '',
-      limit: options.limit ?? 12,
+      limit: options.limit ?? 30,
       countryCode: options.countryCode ?? 'VN',
     },
   });
