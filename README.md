@@ -2,190 +2,75 @@
   <img src="assets/images/brand-lockup-light.png" alt="DivvyUp" width="280" />
 </p>
 
-<p align="center"><b>Chia hoá đơn và chi tiêu nhóm cho mỗi chuyến đi.</b></p>
+<p align="center"><b>Đi chơi cùng nhau, chia tiền nhẹ nhàng.</b></p>
+
+<p align="center">
+  <a href="https://github.com/duc2301/DivvyUp/releases/latest"><b>⬇ Tải bản mới nhất cho Android</b></a>
+</p>
 
 ---
 
-## Tính năng
+DivvyUp giúp một nhóm bạn ghi lại mọi khoản chi trong chuyến đi và tính giúp **ai đang nợ ai, bao nhiêu**. Không cần bảng tính, không cần nhớ ai đã trả tiền gì. Cuối chuyến, mở app là biết mỗi người cần chuyển cho ai, kèm luôn mã QR để chuyển khoản.
 
-- **Chuyến đi → nhóm → thành viên.** Tạo nhóm với số người khai sẵn, đặt tên từng người. Người trong chuyến chưa cần cài app: gửi **mã mời** sau để họ nhận đúng tên của mình.
-- **Khoản chi.** Mặc định chia đều cho cả chuyến, bỏ bớt người không chịu, hoặc gõ số tiền riêng từng người. Có một người đại diện đứng ra trả. Sửa và xoá được (xoá có hỏi lại).
-- **Số dư & ai trả ai.** Số dư được tính ở database từ dữ liệu gốc. App gợi ý số giao dịch ít nhất để trả hết nợ. Chạm một dòng để xem **mã QR nhận tiền** của người nhận.
-- **Đánh dấu khoản chi đã xong.** Khoản đã xong không tính vào số dư (vẫn tính vào tổng chi). Chỉ người đã trả tiền khoản đó hoặc chủ chuyến mới đánh dấu được; sửa khoản chi thì tự bỏ đánh dấu.
-- **Hồ sơ.** Ảnh đại diện (hiện cạnh tên trong mọi chuyến đã tham gia), mã QR và ghi chú nhận tiền — chỉ người đi chung chuyến mới xem được.
-- **Điểm đến & ảnh bìa.** Tìm địa điểm bằng Mapbox, ảnh bìa lấy từ Unsplash (Pinterest nếu có quyền). Lướt để chọn ảnh làm nền.
-- **Dự báo thời tiết** cho điểm đến, có từ 7 ngày trước chuyến đi: một dòng tóm tắt dưới địa điểm, chạm vào xem theo giờ, nhiều ngày (biểu đồ/danh sách) và chất lượng không khí. Dữ liệu Open-Meteo (miễn phí, không cần khoá), lưu tạm 3 tiếng hoặc bấm làm mới.
-- **Tài khoản.** Đăng ký có xác nhận email, ghi nhớ đăng nhập, quên mật khẩu. Hoặc **dùng không cần tài khoản** (chế độ khách, dữ liệu chỉ nằm trên máy).
-- Giao diện sáng/tối, tiếng Việt.
+## Có gì trong app
 
-Tiền luôn lưu bằng **số nguyên đơn vị nhỏ nhất** (đồng, cent) và chia theo phương pháp phần dư lớn nhất: tổng các phần chia luôn khớp tuyệt đối với tổng khoản chi.
+### 🧳 Chuyến đi
+- Tạo chuyến đi, chọn điểm đến, và lướt chọn **ảnh bìa** từ hàng chục ảnh đẹp của nơi đó.
+- Chia nhóm theo xe, theo phòng, và đặt sẵn số người trong mỗi nhóm.
+- Bạn bè **chưa cần cài app** vẫn được thêm tên vào. Khi họ cài app, chỉ cần nhập **mã mời** để nhận đúng tên của mình.
 
-## Công nghệ
+### 💸 Khoản chi
+- Mỗi khoản ghi rõ nội dung, thời gian và ai đứng ra trả.
+- **Chia đều cho cả nhóm** chỉ bằng một chạm, bỏ bớt người không tham gia. Hoặc **nhập số tiền riêng từng người**.
+- Sửa lại khi ghi nhầm, xoá khi không cần (có hỏi lại trước khi xoá).
+- **Đánh dấu "đã xong"** cho khoản mọi người đã trả đủ. Khoản đó sẽ không còn tính vào số nợ.
 
-| Phần | Dùng |
-|---|---|
-| App | Expo SDK 57, React Native 0.86, React 19, expo-router, React Compiler |
-| Giao diện | NativeWind v4 (Tailwind), lucide icons |
-| Dữ liệu & đăng nhập | Supabase: Postgres + RLS, Auth (PKCE), Edge Functions |
-| Build & cập nhật | EAS Build, EAS Update, GitHub Actions |
+### ⚖️ Số dư & chuyển tiền
+- Xem ngay mỗi người **đang được nhận lại** hay **đang nợ** bao nhiêu.
+- App gợi ý **cách chuyển tiền ít lần nhất** để cả nhóm hết nợ.
+- Chạm vào một dòng "A → B" để mở **mã QR nhận tiền** của người nhận, quét là chuyển.
 
-Không có backend riêng. Logic nghiệp vụ nằm trong app; **RLS và RPC trong Postgres là lớp bảo mật duy nhất**, nên mọi quy tắc quan trọng (tổng phần chia, quyền chủ chuyến, không xoá thành viên đang có khoản chi) đều được chặn lại ở database.
+### 👤 Hồ sơ
+- Ảnh đại diện hiện cạnh tên bạn trong mọi chuyến đi.
+- Tải lên **mã QR ngân hàng** và ghi chú số tài khoản. Chỉ những người đang đi chung chuyến mới xem được.
 
----
+### 🌤 Thời tiết
+- Từ **7 ngày trước chuyến đi**, app hiện dự báo thời tiết của điểm đến ngay trong chuyến.
+- Chạm vào để xem chi tiết: nhiệt độ theo giờ, dự báo cả tuần, giờ mặt trời mọc và lặn, chỉ số UV, chất lượng không khí.
 
-## Chạy trên máy
+### ✨ Và
+- Đăng ký bằng email, ghi nhớ đăng nhập, lấy lại mật khẩu khi quên.
+- Có thể **dùng ngay không cần tài khoản**. Khi đó dữ liệu chỉ lưu trên điện thoại của bạn.
+- Giao diện sáng và tối, hoàn toàn bằng tiếng Việt.
 
-Yêu cầu: Node.js 22, npm. Điện thoại có **Expo Go**, hoặc Android emulator.
+## Cài đặt (Android)
 
-```bash
-npm ci
-```
+1. Mở trang **[Releases](https://github.com/duc2301/DivvyUp/releases/latest)** và tải file `DivvyUp-vX.Y.Z.apk`.
+2. Mở file vừa tải. Nếu điện thoại hỏi, cho phép *cài ứng dụng không rõ nguồn gốc*.
+3. Bản sau cài đè lên bản cũ, dữ liệu vẫn giữ nguyên. Các bản sửa nhỏ app tự cập nhật khi mở.
 
-Tạo file `.env.local` ở thư mục gốc (không commit):
+## Bắt đầu trong 1 phút
 
-```bash
-EXPO_PUBLIC_SUPABASE_URL=https://<project-ref>.supabase.co
-EXPO_PUBLIC_SUPABASE_KEY=sb_publishable_...
-```
+1. **Tạo chuyến đi** bằng nút ＋ ở màn hình chính.
+2. Vào **Thành viên** để thêm tên mọi người, hoặc bấm nút chia sẻ để gửi **mã mời** vào nhóm chat.
+3. Bấm **Thêm khoản chi** mỗi khi ai đó trả tiền.
+4. Cuối chuyến, mở tab **Số dư** để xem ai chuyển cho ai, chạm vào để hiện mã QR.
 
-> Hai biến này **công khai**: chúng được nhúng vào app. Dữ liệu được bảo vệ bởi RLS, không phải bởi việc giấu khoá. **Tuyệt đối không** đặt `service_role` key vào repo này.
+## Câu hỏi thường gặp
 
-```bash
-npx expo start            # quét QR bằng Expo Go
-npx expo start --web      # chạy trên trình duyệt
-```
+**Bạn tôi không muốn cài app thì sao?**
+Cứ thêm tên họ vào chuyến đi, mọi khoản chi và số nợ vẫn được tính đủ. Chỉ là họ không tự xem trên điện thoại được.
 
-Sửa `.env.local` xong phải khởi động lại với `npx expo start --clear`.
+**Dữ liệu của tôi có an toàn không?**
+Chỉ thành viên trong chuyến mới xem được chuyến đó. Mã QR và số tài khoản chỉ hiện với người đang đi chung chuyến với bạn.
 
-### Kiểm tra
+**Bấm link trong email mà không mở app?**
+Chọn *Mở bằng Chrome* thay vì mở ngay trong Gmail. Link đặt lại mật khẩu phải mở trên **chính điện thoại** bạn đã bấm "Quên mật khẩu".
 
-```bash
-npm run typecheck
-npm test
-```
-
-GitHub Actions chạy đúng hai lệnh này cho mọi pull request, và trước mỗi lần phát hành.
-
----
-
-## Cài đặt Supabase (làm một lần cho mỗi project)
-
-### 1. Database
-
-Mở **SQL Editor**, chạy lần lượt các file trong `supabase/migrations/` **theo thứ tự tên file**.
-
-> ⚠️ Không chạy lại `20260916_1040_lock_trip_members.sql` **sau** `20260917_1000_harden_members_settlements.sql`: nó ghi đè trigger bằng bản cũ và làm hỏng việc thêm thành viên.
-
-Migration `20260917_1100_profile_payment_settled.sql` tự tạo hai bucket Storage kèm policy: `avatars` (công khai) và `payment-qr` (riêng tư). Không cần tạo tay trên dashboard.
-
-`supabase/verify.sql` dùng để kiểm tra nhanh sau khi chạy.
-`supabase/cleanup-before-release.sql` xoá toàn bộ chuyến đi và khoản chi, **giữ tài khoản**. Chỉ dùng khi dọn dữ liệu thử.
-
-### 2. Edge Functions (tìm địa điểm, ảnh bìa)
-
-```bash
-npx supabase login
-npx supabase link --project-ref <project-ref>
-npx supabase secrets set MAPBOX_TOKEN=... UNSPLASH_ACCESS_KEY=...
-# Tuỳ chọn, cần quyền Pinterest Partner:  PINTEREST_TOKEN=...
-npx supabase functions deploy place-search
-npx supabase functions deploy place-photos
-```
-
-Ảnh bìa lấy tối đa 30 tấm mỗi địa điểm (giới hạn của Unsplash cho một lần tìm).
-
-### 3. Auth
-
-**Authentication → URL Configuration → Redirect URLs.** Thêm đủ các dòng sau, kể cả `**`:
-
-```
-divvyup://**
-exp://**
-http://localhost:8081/**
-```
-
-Thiếu dòng này thì bấm link trong email xác nhận hoặc đặt lại mật khẩu sẽ ra trang trắng, không quay về app.
-
-**Authentication → Emails → SMTP Settings.** Bật SMTP riêng (Gmail app password, Resend, Brevo…). Máy chủ email mặc định của Supabase chỉ gửi được vài email mỗi giờ cho cả project, người dùng sẽ gặp lỗi *email rate limit exceeded*. Sau đó nới **Authentication → Rate Limits → emails**.
+**Sao chưa thấy dự báo thời tiết?**
+Dự báo chỉ hiện khi chuyến đi đã có điểm đến và còn không quá 7 ngày nữa là khởi hành. Dự báo xa hơn thường không chính xác.
 
 ---
 
-## Phát hành
-
-Có hai cách đưa thay đổi tới người dùng:
-
-| | **Cập nhật OTA** | **APK mới** |
-|---|---|---|
-| Dùng khi | Chỉ sửa code JS/TS, giao diện, text | Thêm/đổi thư viện có mã native, đổi `app.json` phần native (icon, splash, scheme, quyền…), hoặc lần phát hành đầu |
-| Cách làm | Push lên `main` | Tạo GitHub Release |
-| Người dùng | Tự nhận ở lần mở app sau đó | Tải APK và cài đè |
-| Workflow | `.github/workflows/ota-update.yml` | `.github/workflows/build-apk-release.yml` |
-
-Không cần tự nhớ cách nào an toàn: `runtimeVersion` dùng policy **fingerprint**. Nếu thay đổi có đụng phần native, bản OTA **tự không áp** cho APK cũ (thay vì làm app crash), và bạn sẽ thấy người dùng không nhận được cập nhật. Khi đó phát hành APK mới.
-
-### Chuẩn bị (một lần)
-
-1. **Tạo token Expo:** expo.dev → Account settings → Access tokens. Thêm vào GitHub: **Settings → Secrets and variables → Actions → New repository secret**, tên `EXPO_TOKEN`.
-2. **Build lần đầu ở máy mình** để EAS tạo keystore Android (CI chạy ở chế độ không tương tác nên không tạo được):
-   ```bash
-   npx eas-cli login
-   npx eas-cli build -p android --profile preview
-   ```
-   Chọn *Generate new keystore* khi được hỏi. Keystore được giữ trên EAS; **đừng xoá nó**, vì APK ký bằng khoá khác không cài đè được lên bản cũ.
-
-### Phát hành APK mới
-
-1. Tăng `"version"` trong `app.json` (vd `1.0.0` → `1.1.0`), commit và push lên `main`.
-2. Trên GitHub: **Releases → Draft a new release**.
-   - Tag: `v` + version vừa đặt, vd **`v1.1.0`** (tag không khớp `app.json` thì workflow dừng và báo lỗi).
-   - Target: `main`. Viết ghi chú thay đổi rồi **Publish release**.
-3. Workflow chạy typecheck và test, build APK trên EAS (có thể mất 10–40 phút do xếp hàng), rồi đính `DivvyUp-v1.1.0.apk` vào release.
-
-Workflow lỗi giữa chừng mà release đã tạo: vào **Actions → Release APK → Run workflow**, nhập tag để chạy lại.
-
-### Cập nhật OTA
-
-Push lên `main`. Workflow chạy typecheck và test rồi phát hành lên channel `preview`. Chạy tay được ở **Actions → OTA Update → Run workflow**.
-
-Thay đổi chỉ nằm trong `supabase/`, `.github/`, `scripts/` hoặc file `.md` không kích hoạt OTA.
-
-> **Migration database không đi theo OTA hay APK.** Phải chạy tay trong SQL Editor, **trước** khi phát hành bản app cần nó.
-
-### Checklist trước khi phát hành
-
-- [ ] `npm run typecheck` và `npm test` qua
-- [ ] Đã chạy migration mới (nếu có) trên Supabase
-- [ ] Bấm thử trên máy: đăng ký, đăng nhập, tạo chuyến, thêm khoản chi, xem số dư
-- [ ] Đổi thư viện native hoặc `app.json`? → phát hành **APK mới**, không chỉ OTA
-- [ ] Phát hành APK: đã tăng `version` trong `app.json`, tag khớp
-
----
-
-## Cài đặt cho người dùng (Android)
-
-1. Mở trang **Releases** của repo, tải file `DivvyUp-vX.Y.Z.apk` ở bản mới nhất.
-2. Mở file. Nếu máy hỏi, cho phép *Cài ứng dụng không rõ nguồn gốc* với trình duyệt/trình quản lý file.
-3. Bản sau cài đè lên bản cũ, dữ liệu giữ nguyên. Các sửa lỗi nhỏ tự về qua OTA khi mở app.
-
-**Bấm link trong email mà không mở app?** Chọn *Mở bằng Chrome* thay vì trình duyệt trong Gmail. Link đặt lại mật khẩu phải mở trên **chính điện thoại** đã bấm "Quên mật khẩu".
-
----
-
-## Cấu trúc thư mục
-
-```
-src/
-  app/                 màn hình (expo-router, route theo file)
-  components/ui/       component giao diện dùng chung
-  features/auth/       đăng nhập, phiên, link email
-  features/theme/      sáng/tối
-  lib/money/           tiền: chia, số dư, định dạng (có unit test)
-  lib/data/            truy cập dữ liệu, tự chọn Supabase hoặc lưu trên máy (khách)
-  lib/supabase/        client, kiểu database, xử lý lỗi
-supabase/
-  migrations/          schema, RLS, RPC — chạy theo thứ tự
-  functions/           Edge Functions (Deno)
-.github/workflows/     CI, OTA, build APK
-```
-
-Quy ước code và quy trình làm việc: xem `AGENTS.md`.
+<sub>Dữ liệu thời tiết: [Open-Meteo](https://open-meteo.com/). Ảnh địa điểm: [Unsplash](https://unsplash.com/).<br/>
+Dành cho người phát triển: xem [docs/DEVELOPMENT.md](docs/DEVELOPMENT.md).</sub>
