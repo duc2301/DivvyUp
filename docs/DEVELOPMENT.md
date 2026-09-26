@@ -149,15 +149,27 @@ Thay đổi chỉ nằm trong `supabase/`, `.github/`, `scripts/` hoặc file `.
 src/
   app/                 màn hình (expo-router, route theo file)
   components/ui/       component giao diện dùng chung
+  components/money/    component hiển thị tiền/số dư dùng chung (vd. dòng chuyển tiền)
   features/auth/       đăng nhập, phiên, link email
   features/theme/      sáng/tối
+  features/profile/    ảnh đại diện, hồ sơ
+  features/weather/    dự báo thời tiết theo chuyến đi
+  features/place/      chọn điểm đến, ảnh bìa
   lib/money/           tiền: chia, số dư, định dạng (có unit test)
   lib/data/            truy cập dữ liệu, tự chọn Supabase hoặc lưu trên máy (khách)
   lib/supabase/        client, kiểu database, xử lý lỗi
+  lib/storage/         lưu trữ trên máy (chế độ khách)
+  lib/weather/         khung giờ dự báo, mã thời tiết
+  lib/notes/           mẫu ghi chú chuyến đi
+  lib/expenses/        so sánh/diff lịch sử khoản chi
+web/
+  src/                 bản web (Feature-Sliced Design), dùng lại lib/ ở trên qua alias @core
 supabase/
   migrations/          schema, RLS, RPC — chạy theo thứ tự
   functions/           Edge Functions (Deno)
 .github/workflows/     CI, OTA, build APK
 ```
 
-Quy ước code và quy trình làm việc: xem `AGENTS.md` ở thư mục gốc.
+Bản web (`web/`) không sao chép lại lõi tiền và tầng dữ liệu — nó import trực tiếp `src/lib/...` của app mobile qua alias `@core` (khai trong `web/vite.config.ts`), nên hai bản luôn ra cùng một kết quả. Web có client Supabase riêng (`web/src/...`), tách biệt với client của mobile, vì mỗi nền tảng đọc biến môi trường khác nhau (`EXPO_PUBLIC_*` so với `VITE_*`).
+
+Quy ước code và quy trình làm việc: xem `AGENTS.md` ở thư mục gốc. Chi tiết bản web: xem `web/README.md`.

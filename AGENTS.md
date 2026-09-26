@@ -19,6 +19,7 @@ Hệ quả quan trọng nhất của kiến trúc này: **RLS của Supabase là
 | Styling | NativeWind (Tailwind) | đã cài, đã cấu hình |
 | UI primitives | react-native-reusables (founded-labs) | **chưa cài** |
 | UI phức tạp | UI Kitten (akveo) + Eva Design | cài package, **chưa nối `ApplicationProvider`** |
+| Web | React 19 + Vite 7 + Tailwind 3 + react-router 7, kiến trúc Feature-Sliced Design, thư mục `web/` | đã cài, dùng chung Supabase và lõi tiền/dữ liệu qua alias `@core` |
 
 > **Chưa import `@ui-kitten/*`** cho tới khi `ApplicationProvider` được nối kèm cầu nối theme đọc lại từ CSS variable trong `src/global.css`. **Chưa dùng component của react-native-reusables** cho tới khi copy chúng vào repo.
 
@@ -90,21 +91,48 @@ Hai luật chống trôi:
 | `npm run start -- --reset-cache` | Xoá cache Metro — **bắt buộc** sau khi đổi config Tailwind/Babel/Metro |
 | `npm run android` / `npm run ios` / `npm run web` | Chạy theo nền tảng |
 | `npm run lint` | ESLint |
-| `npx tsc --noEmit` | Kiểm tra type (chưa có script riêng) |
+| `npm run typecheck` | Kiểm tra type (`tsc --noEmit`) |
+| `npm test` | Chạy test (`node --test`) — logic tiền tệ ở mục 3 phải có test trước tiên |
+| `npm run release:plan` | Xem trước bản phát hành kế tiếp: số phiên bản, mức tăng, ghi chú (không ghi gì) |
+| `cd web && npm run dev` | Dev server web (Vite, `http://localhost:5173`) |
+| `cd web && npm run build` | Build web → `web/dist/` |
+| `cd web && npm run typecheck` | Kiểm tra type cho web |
 
 **Không chạy build production trong phiên agent** (`gradlew assembleRelease`, `xcodebuild`, `eas build`). Nó đổi asset, phá trạng thái Metro, và mất rất lâu. Cần build thật thì làm ngoài phiên agent.
 
-Chưa có test runner. Khi thêm, phần logic tiền tệ ở mục 3 là thứ **phải** có test trước tiên.
+CI (GitHub Actions) chạy `npm run typecheck` và `npm test` cho mọi pull request và trước mỗi lần phát hành.
 
 ---
 
 ## 7. Quy tắc uỷ thác cho agent
 
-* Việc cần đọc trên 10 file mới kết luận được → gọi `scout-repo`, đừng tự đọc tràn lan.
-* Đụng vào chia tiền / số dư / cấn trừ → chạy `audit-money`.
-* Đụng vào schema, policy, hoặc tầng truy cập dữ liệu → chạy `audit-supabase`.
-* Đụng vào render, animation, file theo nền tảng → chạy `audit-rn`.
-* Thêm hoặc sửa giao diện → chạy `audit-ui`.
-* Xong một mảng việc → `/audit` để chạy cả bộ trên diff hiện tại.
+Quy trình trọn vòng một tính năng nằm ở skill **`feature-pipeline`**: đối chiếu tài liệu → lập kế hoạch → cài đặt → test → soát song song → nhật ký → tài liệu. Agent soát không phải agent viết: người viết code không tự chấm code của mình.
 
-**Agent chỉ trả về phát hiện. Quyết định sửa gì là của người dùng.** Không agent nào trong repo này có quyền ghi file.
+| Agent | Vai trò | Ghi file |
+|---|---|---|
+| `documentation-accuracy-reviewer` | bước đầu: tài liệu nào sai so với code | không |
+| `divvyup-planner` | kế hoạch + phạm vi lan toả + việc tay | không |
+| `scout-repo` | bản đồ nhanh khi cần đọc > 10 file | không |
+| `divvyup-explain` | giải thích code, luồng, "vì sao" | không |
+| `supabase-feature` | thêm bảng/cột/RPC/quyền trọn 8 bước (migration → types → data → nhánh khách) | **có** |
+| `test-writer` | test `node --test` + truy vấn `verify.sql` | **có** (chỉ test) |
+| `invariant-guard` | bất biến tiền/RLS/khách↔đăng nhập/secret — **bắt buộc trước commit** đụng `src/lib`, `supabase/` | không |
+| `audit-money` | chia tiền, số dư, tối giản công nợ | không |
+| `audit-supabase` | schema, RLS, RPC, tầng truy cập dữ liệu | không |
+| `security-code-reviewer` | IDOR, auth, Storage, Edge Function, web, secret | không |
+| `code-quality-reviewer` | đúng tầng, nguồn chân lý, trùng lặp | không |
+| `audit-rn` / `audit-ui` | React Native / giao diện mobile | không |
+| `fsd-architecture-reviewer` | kiến trúc Feature-Sliced Design của `web/` | không |
+| `performance-reviewer` | truy vấn, danh sách, ảnh, thuật toán, bundle | không |
+| `silent-failure` | lỗi bị nuốt im lặng | không |
+| `test-coverage-reviewer` | bộ test đủ và khách quan chưa | không |
+| `change-audit-log` | nhật ký thay đổi + việc tay khi phát hành | không |
+| `docs-updater` | cập nhật tài liệu sau khi xong | **có** (chỉ tài liệu) |
+
+Skill: `feature-pipeline`, `git-commit`, `divvyup-release`, `divvyup-apk-release` (phát hành tự động: tự tăng số theo commit, gắn tag, tạo Release, build APK khi native đổi), `supabase-schema`. Lệnh `/audit` chạy nhanh bộ `audit-*` trên diff hiện tại.
+
+Hook trong `.claude/settings.json` chặn `git commit` khi diff đã stage đụng lõi tiền/tầng dữ liệu/Supabase cho tới khi `invariant-guard` đã soát, và chặn `git push` lên `main` (push `main` = OTA tự phát hành).
+
+**Quyết định sửa gì là của người dùng.** Agent soát chỉ trả về phát hiện; agent ghi file chỉ ghi trong phạm vi vai trò của nó.
+
+Agent mới tạo hoặc sửa trong `.claude/agents/` chỉ được nạp ở phiên Claude Code **sau**, không có hiệu lực ngay trong phiên đang tạo/sửa nó.

@@ -4,20 +4,18 @@
 > Xem chi tiết tại: @AGENTS.md
 
 ## 1. Project Overview & Tech Stack
-- **Framework/Core:** React Native / React / TypeScript / Node.js
-- **State Management & Data:** TanStack Query / Zustand / Tailwind CSS
-- **Package Manager:** npm / yarn / pnpm
+- **App mobile (gốc):** Expo (React Native) + TypeScript + Supabase (Postgres/RLS/Auth). Không có backend riêng — xem `AGENTS.md` §1, §4.
+- **Web (`web/`):** React + Vite + react-router, Feature-Sliced Design, dùng lại lõi tiền/dữ liệu của mobile qua alias `@core`.
+- **Data:** Không dùng TanStack Query/Zustand. Truy cập dữ liệu qua `src/lib/data/manager.ts` (tự chọn Supabase hoặc lưu máy khi ở chế độ khách) và hook `use-async` (`src/lib/data/use-async.ts`).
+- **Styling:** NativeWind (Tailwind) trên mobile; Tailwind thuần trên web.
 
 ## 2. Common Commands
-- **Install dependencies:** `npm install`
-- **Run local dev:** `npm run dev` (hoặc `npx react-native start`)
-- **Build / Lint / Test:**
-  - Lint: `npm run lint`
-  - Type check: `npx tsc --noEmit`
-  - Test: `npm test`
+Mobile (thư mục gốc): `npm run start` (dev server), `npm run android` / `ios` / `web`, `npm run lint`, `npm run typecheck`, `npm test`.
+Web (`cd web`): `npm run dev`, `npm run build`, `npm run typecheck`.
+Chi tiết đầy đủ ở `AGENTS.md` §6 và `docs/DEVELOPMENT.md`.
 
 ## 3. Code Style & Architecture Constraints
-- **Architecture:** Feature-Sliced Design (FSD).
+- **Architecture:** Mobile không theo FSD. Feature-Sliced Design chỉ áp dụng cho `web/` (`app → pages → widgets → features → entities → shared`).
 - **Components:** Functional components với TypeScript typing rõ ràng; không dùng `any`.
 - **Naming Conventions:**
   - PascalCase cho Components và Interfaces (`UserCard.tsx`, `IUserProfile.ts`).
