@@ -52,6 +52,21 @@ function divvyupAliases(): Plugin {
 
 export default defineConfig({
   plugins: [divvyupAliases(), react()],
+  // Cấu hình biên dịch CỐ ĐỊNH thay vì để esbuild tự tìm tsconfig gần nhất: với
+  // file dùng chung trong ../src, tsconfig gần nhất là của app mobile, nó
+  // `extends: "expo/tsconfig.base"` — trên Vercel chỉ web/ được cài package nên
+  // không có `expo`, build gãy. Kiểu vẫn do `npm run typecheck` (tsconfig của web) kiểm.
+  esbuild: {
+    // PHẢI là chuỗi: Vite chỉ bỏ hẳn bước tìm tsconfig khi tsconfigRaw là chuỗi;
+    // dạng object vẫn đi tìm để trộn và vẫn gãy như trên.
+    tsconfigRaw: JSON.stringify({
+      compilerOptions: {
+        jsx: 'react-jsx',
+        useDefineForClassFields: true,
+        verbatimModuleSyntax: false,
+      },
+    }),
+  },
   resolve: {
     // Code dùng chung nằm ngoài web/ và import thư viện theo tên trần. Không
     // dedupe thì Vite tìm thư viện ở ../node_modules — trên Vercel thư mục đó
