@@ -18,7 +18,8 @@ const RANK = { none: 0, patch: 1, minor: 2, major: 3 };
 const NO_RELEASE_TYPES = new Set(['docs', 'chore', 'ci', 'test', 'style', 'build']);
 const PATCH_TYPES = new Set(['fix', 'perf', 'refactor', 'revert']);
 
-const HEADER = /^(?<type>[a-z]+)(?:\((?<scope>[^)]*)\))?(?<bang>!)?:\s*(?<subject>.+)$/i;
+// `\S.*` thay cho `\s*.+`: hai phần không cùng khớp khoảng trắng → không backtracking.
+const HEADER = /^(?<type>[a-z]+)(?:\((?<scope>[^)]*)\))?(?<bang>!)?:\s*(?<subject>\S.*)$/i;
 
 /** @param {string} value 'v1.2.3' hoặc '1.2.3' */
 export function parseVersion(value) {

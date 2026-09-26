@@ -65,7 +65,8 @@ function base64ToBytes(base64: string): Uint8Array {
   const binary = atob(base64);
   const bytes = new Uint8Array(binary.length);
   for (let index = 0; index < binary.length; index += 1) {
-    bytes[index] = binary.charCodeAt(index);
+    // atob chỉ trả ký tự Latin-1 (0–255) nên codePointAt cho đúng một byte.
+    bytes[index] = binary.codePointAt(index) ?? 0;
   }
   return bytes;
 }

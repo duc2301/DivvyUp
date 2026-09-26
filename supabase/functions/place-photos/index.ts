@@ -160,8 +160,8 @@ function stripDiacritics(input: string): string {
   return input
     .normalize('NFD')
     .replace(/[̀-ͯ]/g, '')
-    .replace(/đ/g, 'd')
-    .replace(/Đ/g, 'D');
+    .replaceAll('đ', 'd')
+    .replaceAll('Đ', 'D');
 }
 
 /** Chuẩn hoá để so khớp: bỏ dấu, chữ thường, chỉ còn chữ-số cách nhau một khoảng trắng. */
@@ -181,7 +181,7 @@ function mentionsPlace(text: string, placeName: string): boolean {
   if (name.length < 2) return false;
   const haystack = ` ${normalizeText(text)} `;
   if (haystack.includes(` ${name} `)) return true;
-  return name.includes(' ') && haystack.replace(/ /g, '').includes(name.replace(/ /g, ''));
+  return name.includes(' ') && haystack.replaceAll(' ', '').includes(name.replaceAll(' ', ''));
 }
 
 type PhotoAttempt = { photos: Photo[]; relevant: Photo[] } | { failure: string };
@@ -271,9 +271,13 @@ async function fromUnsplash(query: string, placeName: string, limit: number): Pr
 const COMMONS_NOISE =
   /(\bmap\b|ban do|bản đồ|\bflag\b|\blogo\b|diagram|\bchart\b|\bseal\b|coat of arms|emblem|\bicon\b|screenshot|signature|locator|sơ đồ|so do)/i;
 
-/** Bỏ thẻ HTML trong metadata Artist của Commons. */
+/**
+ * Bỏ thẻ HTML trong metadata Artist của Commons. Dữ liệu từ bên ngoài: `[^<>]`
+ * không cho một thẻ nuốt sang thẻ kế tiếp, tránh backtracking khi chuỗi có nhiều
+ * "<" không đóng (Edge Function có giới hạn CPU).
+ */
 function stripHtml(input: string): string {
-  return input.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+  return input.replace(/<[^<>]*>/g, '').replace(/\s+/g, ' ').trim();
 }
 
 /**

@@ -21,7 +21,7 @@ export function useGoBack(fallback: string = '/'): () => void {
 /** Ký tự điều khiển (mã < 32, 127) hoặc dấu gạch chéo ngược. */
 function hasUnsafeChar(value: string): boolean {
   for (let index = 0; index < value.length; index += 1) {
-    const code = value.charCodeAt(index);
+    const code = value.codePointAt(index) ?? 0;
     if (code < 32 || code === 127 || code === 92) return true;
   }
   return false;
