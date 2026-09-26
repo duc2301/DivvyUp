@@ -2,6 +2,9 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 
 import type { Money, SplitLine } from '@/lib/money';
 import type { SplitModeDb } from '@/lib/supabase/database.types';
+import type { ExpenseEvent } from '@/lib/data/expenses';
+import type { NoteTemplateKey, TripNote } from '@/lib/data/notes';
+import { NOTE_TEMPLATE_KEYS } from '@/lib/data/notes';
 import type { TripCoverImage, TripGroup, TripMember, TripSummary } from '@/lib/data/trips';
 
 /**
@@ -40,6 +43,49 @@ export interface StoredExpense {
 
 export interface StoredGroup extends TripGroup {
   readonly tripId: string;
+}
+
+/** Ghi chú khách. Xoá khách là xoá cứng — không có ai khác cần xem lịch sử. */
+export type StoredNote = TripNote;
+
+/**
+ * Nhật ký khoản chi của khách. Giữ tripId để lọc theo chuyến; ảnh chụp giữ
+ * nguyên sau khi khoản chi bị xoá (khách xoá cứng khoản chi).
+ */
+export interface StoredExpenseEvent extends ExpenseEvent {
+  readonly tripId: string;
+}
+
+/** Bỏ bản ghi hỏng thay vì làm chết màn hình; bù trường bản cũ chưa có. */
+function normalizeNote(note: Partial<StoredNote>): StoredNote | null {
+  if (typeof note.id !== 'string' || typeof note.tripId !== 'string') return null;
+  const epoch = new Date(0).toISOString();
+  // Mẫu lạ (bản app khác, dữ liệu hỏng) → không mẫu, thay vì làm hỏng màn hình.
+  const rawTemplate: unknown = note.template;
+  const template = (NOTE_TEMPLATE_KEYS as readonly unknown[]).includes(rawTemplate)
+    ? (rawTemplate as NoteTemplateKey)
+    : null;
+  return {
+    id: note.id,
+    tripId: note.tripId,
+    title: typeof note.title === 'string' ? note.title : '',
+    body: typeof note.body === 'string' ? note.body : '',
+    template,
+    sortOrder: typeof note.sortOrder === 'number' ? note.sortOrder : 0,
+    createdAt: note.createdAt ?? epoch,
+    updatedAt: note.updatedAt ?? note.createdAt ?? epoch,
+    updatedByMemberId: note.updatedByMemberId ?? null,
+  };
+}
+
+function isStoredEvent(event: Partial<StoredExpenseEvent>): event is StoredExpenseEvent {
+  return (
+    typeof event.id === 'string' &&
+    typeof event.tripId === 'string' &&
+    typeof event.expenseId === 'string' &&
+    typeof event.action === 'string' &&
+    typeof event.at === 'string'
+  );
 }
 
 /**
@@ -107,17 +153,43 @@ export class LocalStore {
     members: 'divvyup_local_members',
     expenses: 'divvyup_local_expenses',
     groups: 'divvyup_local_groups',
+    notes: 'divvyup_local_notes',
+    expenseEvents: 'divvyup_local_expense_events',
   };
 
   async get<T>(key: string): Promise<T[]> {
     const raw = await AsyncStorage.getItem(key);
     if (!raw) return [];
+    let parsed: unknown;
     try {
-      const parsed: unknown = JSON.parse(raw);
-      return Array.isArray(parsed) ? (parsed as T[]) : [];
+      parsed = JSON.parse(raw);
     } catch {
       // Dữ liệu hỏng thì coi như rỗng, đừng để một chuỗi JSON lỗi làm chết app.
+      // Nhưng SAO LƯU chuỗi gốc trước: lần ghi kế tiếp sẽ đè khoá này bằng mảng
+      // mới, và dữ liệu cũ (có thể cứu tay được) biến mất không dấu vết.
+      await this.backupCorrupt(key, raw);
       return [];
+    }
+    return Array.isArray(parsed) ? (parsed as T[]) : [];
+  }
+
+  /**
+   * Chép chuỗi hỏng sang `${key}__corrupt_<ms>`, xong mới gỡ khoá gốc — để mỗi
+   * lần đọc sau không sinh thêm một bản sao lưu nữa. Sao lưu thất bại thì GIỮ
+   * khoá gốc (thà lần sau thử lại còn hơn mất dữ liệu).
+   * Lỗi ở đây không được chặn việc mở app (máy đầy bộ nhớ chẳng hạn) — nuốt có
+   * chủ đích: sao lưu là lưới an toàn phụ, không phải đường chính.
+   */
+  private async backupCorrupt(key: string, raw: string): Promise<void> {
+    try {
+      await AsyncStorage.setItem(`${key}__corrupt_${Date.now()}`, raw);
+    } catch {
+      return;
+    }
+    try {
+      await AsyncStorage.removeItem(key);
+    } catch {
+      // Còn khoá gốc chỉ nghĩa là lần đọc sau sao lưu thêm một bản — vô hại.
     }
   }
 
@@ -215,6 +287,61 @@ export class LocalStore {
       this.keys.expenses,
       expenses.filter((item) => item.id !== id),
     );
+  }
+
+  // --- Notes ---
+  async listAllNotes(): Promise<StoredNote[]> {
+    const raw = await this.get<Partial<StoredNote>>(this.keys.notes);
+    return raw.flatMap((note) => {
+      const normalized = normalizeNote(note);
+      return normalized ? [normalized] : [];
+    });
+  }
+
+  async listNotes(tripId: string): Promise<StoredNote[]> {
+    const all = await this.listAllNotes();
+    return all
+      .filter((note) => note.tripId === tripId)
+      .sort((a, b) => a.sortOrder - b.sortOrder || a.createdAt.localeCompare(b.createdAt));
+  }
+
+  async saveNote(note: StoredNote): Promise<void> {
+    const notes = await this.listAllNotes();
+    const index = notes.findIndex((item) => item.id === note.id);
+    if (index > -1) notes[index] = note;
+    else notes.push(note);
+    await this.set(this.keys.notes, notes);
+  }
+
+  async deleteNote(id: string): Promise<void> {
+    const notes = await this.listAllNotes();
+    await this.set(
+      this.keys.notes,
+      notes.filter((item) => item.id !== id),
+    );
+  }
+
+  // --- Expense events ---
+  async listExpenseEvents(expenseId: string): Promise<StoredExpenseEvent[]> {
+    const raw = await this.get<Partial<StoredExpenseEvent>>(this.keys.expenseEvents);
+    return raw
+      .filter(isStoredEvent)
+      .filter((event) => event.expenseId === expenseId)
+      .map((event) => ({
+        ...event,
+        actorMemberId: event.actorMemberId ?? null,
+        before: event.before ?? null,
+        after: event.after ?? null,
+      }))
+      .sort((a, b) => b.at.localeCompare(a.at));
+  }
+
+  async appendExpenseEvent(event: StoredExpenseEvent): Promise<void> {
+    const events = (await this.get<Partial<StoredExpenseEvent>>(this.keys.expenseEvents)).filter(
+      isStoredEvent,
+    );
+    events.push(event);
+    await this.set(this.keys.expenseEvents, events);
   }
 }
 

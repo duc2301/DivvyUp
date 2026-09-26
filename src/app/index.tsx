@@ -12,21 +12,7 @@ import { UserMenu } from '@/components/ui/user-menu';
 import { listTrips } from '@/lib/data/manager';
 import { currentCover } from '@/lib/data/trips';
 import { useAsync } from '@/lib/data/use-async';
-import { formatDate } from '@/lib/datetime';
-
-function tripDateLabel(startDate: string | null, endDate: string | null): string | null {
-  // Cột date của Postgres là yyyy-MM-dd, không có múi giờ. new Date('2026-09-15')
-  // sẽ được hiểu là UTC và lệch một ngày ở múi giờ âm, nên tách tay.
-  const toLocal = (value: string): Date => {
-    const [year, month, day] = value.split('-').map(Number);
-    return new Date(year, month - 1, day);
-  };
-
-  if (startDate && endDate) return `${formatDate(toLocal(startDate))} → ${formatDate(toLocal(endDate))}`;
-  if (startDate) return `Từ ${formatDate(toLocal(startDate))}`;
-  if (endDate) return `Đến ${formatDate(toLocal(endDate))}`;
-  return null;
-}
+import { formatTripDateRange } from '@/lib/datetime';
 
 export default function TripListScreen() {
   const router = useRouter();
@@ -106,7 +92,7 @@ export default function TripListScreen() {
                       </Text>
                     </View>
                     <Text className="mt-1 text-sm text-muted-foreground">
-                      {tripDateLabel(trip.startDate, trip.endDate) ?? 'Chưa đặt ngày'}
+                      {formatTripDateRange(trip.startDate, trip.endDate) ?? 'Chưa đặt ngày'}
                     </Text>
                   </View>
                 );
@@ -133,7 +119,7 @@ export default function TripListScreen() {
                     </View>
                     <Text className="mt-1 text-sm text-white/80">
                       {trip.place ? `📍 ${trip.place.name} · ` : ''}
-                      {tripDateLabel(trip.startDate, trip.endDate) ?? 'Chưa đặt ngày'}
+                      {formatTripDateRange(trip.startDate, trip.endDate) ?? 'Chưa đặt ngày'}
                     </Text>
                   </View>
                 </>

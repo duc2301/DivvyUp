@@ -1,7 +1,8 @@
 -- ============================================================================
 -- DivvyUp — kiểm tra sức khoẻ schema
 --
--- Chạy trong SQL Editor của Supabase SAU KHI áp dụng xong 4 migration.
+-- Chạy trong SQL Editor của Supabase SAU KHI áp dụng xong mọi migration
+-- (thứ tự trong supabase/README.md).
 -- Mỗi truy vấn phải trả về 0 dòng. Có dòng nào là có lỗ hổng.
 -- ============================================================================
 
@@ -141,3 +142,96 @@ from public.trip_members
 where user_id is not null and removed_at is null
 group by trip_id, user_id
 having count(*) > 1;
+
+
+-- 12. expenses còn policy UPDATE/ALL nào không?
+--     Phải KHÔNG: sửa thẳng expenses là vòng qua nhật ký expense_events
+--     (migration 20260925_1000 đã drop expenses_update_member).
+select p.polname as policy_sua_thang_expenses
+from pg_policy p
+where p.polrelid = 'public.expenses'::regclass
+  and p.polcmd in ('w', '*');   -- 'w' = UPDATE, '*' = ALL
+
+
+-- 13. expense_events có policy ghi nào không?
+--     Nhật ký chỉ được ghi bởi RPC SECURITY DEFINER.
+select p.polname as policy_ghi_nhat_ky
+from pg_policy p
+where p.polrelid = 'public.expense_events'::regclass
+  and p.polcmd <> 'r';          -- 'r' = SELECT
+
+
+-- 14. trip_notes có policy DELETE/ALL nào không?
+--     Xoá ghi chú là xoá mềm (deleted_at), không xoá cứng.
+select p.polname as policy_xoa_cung_ghi_chu
+from pg_policy p
+where p.polrelid = 'public.trip_notes'::regclass
+  and p.polcmd in ('d', '*');
+
+
+-- 15. Nhật ký có dòng nào trỏ sai chuyến đi so với khoản chi của nó không?
+select ev.id as nhat_ky_sai_chuyen
+from public.expense_events ev
+join public.expenses e on e.id = ev.expense_id
+where ev.trip_id <> e.trip_id;
+
+
+-- 16. Hàm nội bộ / RPC mới có mở cho anon, hoặc hàm nội bộ mở cho authenticated?
+--     expense_snapshot và log_expense_event chỉ được gọi từ bên trong RPC.
+select p.oid::regprocedure as ham_mo_quyen_sai
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and (
+    (p.proname in ('update_trip_details', 'update_trip_place', 'set_trip_cover_index',
+                   'set_trip_cover_if_empty', 'create_expense', 'update_expense', 'void_expense', 'set_expense_settled')
+     and has_function_privilege('anon', p.oid, 'execute'))
+    or
+    (p.proname in ('expense_snapshot', 'log_expense_event')
+     and (has_function_privilege('anon', p.oid, 'execute')
+          or has_function_privilege('authenticated', p.oid, 'execute')))
+  );
+
+
+-- 17. Role authenticated còn quyền ghi thẳng expense_events không?
+--     Migration 20260925_1000 revoke; bảng chỉ được ghi từ RPC SECURITY DEFINER.
+select quyen as quyen_ghi_nhat_ky_con_mo
+from unnest(array['INSERT', 'UPDATE', 'DELETE']) as quyen
+where has_table_privilege('authenticated', 'public.expense_events', quyen);
+
+
+-- 18. Trigger bảo vệ của migration 20260925_1000 có thiếu hoặc bị tắt không?
+--     tgenabled = 'D' là đã ALTER TABLE ... DISABLE TRIGGER — mất chốt mà
+--     không lỗi nào hiện ra.
+select v.bang, v.trigger_thieu_hoac_tat
+from (values
+  ('public.trips',      'trips_guard_identity'),
+  ('public.trips',      'trips_validate_cover'),
+  ('public.trip_notes', 'trip_notes_set_actor'),
+  ('public.trip_notes', 'trip_notes_forbid_undelete'),
+  ('public.trip_notes', 'trip_notes_touch_updated_at')
+) as v(bang, trigger_thieu_hoac_tat)
+where not exists (
+  select 1 from pg_trigger tg
+  where tg.tgrelid = to_regclass(v.bang)
+    and tg.tgname = v.trigger_thieu_hoac_tat
+    and not tg.tgisinternal
+    and tg.tgenabled <> 'D'
+);
+
+
+-- 19. Ảnh bìa ngoài allowlist của trigger trips_validate_cover.
+--     KHÔNG bắt buộc 0 dòng: trigger chỉ kiểm khi bộ ảnh đổi, nên dữ liệu lưu
+--     trước migration 20260925_1000 có thể còn ở đây. Có dòng = lần tới ai đó
+--     lưu một bộ ảnh KHÁC mà vẫn giữ ảnh này thì bị từ chối (lướt carousel hay
+--     lưu lại nguyên bộ thì không sao). Quyết định dọn hay giữ.
+select t.id as chuyen_co_anh_bia_ngoai_allowlist, item ->> 'url' as url, item ->> 'link' as link
+from public.trips t
+cross join lateral jsonb_array_elements(t.cover_images) as item
+where coalesce(lower(substring(item ->> 'url' from '^https://([A-Za-z0-9.-]+)([/?#][^[:space:]]*)?$')), '')
+        <> all (array['images.unsplash.com', 'plus.unsplash.com',
+                      'upload.wikimedia.org', 'i.pinimg.com'])
+   or (item ->> 'link' is not null
+       and coalesce(lower(substring(item ->> 'link' from '^https://([A-Za-z0-9.-]+)([/?#][^[:space:]]*)?$')), '')
+             <> all (array['unsplash.com', 'www.unsplash.com', 'commons.wikimedia.org',
+                           'www.pinterest.com', 'pinterest.com']));

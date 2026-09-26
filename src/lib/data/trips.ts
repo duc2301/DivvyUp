@@ -61,6 +61,71 @@ export function currentCover(cover: TripCoverGallery): TripCoverImage | null {
   return cover.images[cover.index] ?? cover.images[0] ?? null;
 }
 
+/**
+ * Khoá nhận diện điểm đến — cùng công thức với RPC set_trip_cover_if_empty
+ * (coalesce(place_external_id, place_name)). Dùng để hỏi "điểm đến có còn là
+ * cái mình đã tìm ảnh cho không" khi tải ảnh bìa nền.
+ */
+export function placeKeyOf(place: TripPlace): string {
+  // trim: RPC update_trip_place lưu place_name đã trim — khoá phải so cùng dạng.
+  return place.externalId ?? place.name.trim();
+}
+
+// Cùng luật với trigger trips_validate_cover (migration 20260925_1000). Sửa một
+// bên thì sửa cả bên kia.
+const COVER_IMAGE_HOSTS: readonly string[] = [
+  'images.unsplash.com',
+  'plus.unsplash.com',
+  'upload.wikimedia.org',
+  'i.pinimg.com',
+];
+const COVER_LINK_HOSTS: readonly string[] = [
+  'unsplash.com',
+  'www.unsplash.com',
+  'commons.wikimedia.org',
+  'www.pinterest.com',
+  'pinterest.com',
+];
+const HTTPS_URL = /^https:\/\/([A-Za-z0-9.-]+)([/?#]\S*)?$/;
+export const COVER_IMAGES_MAX = 100;
+
+function httpsHost(value: string): string | null {
+  const match = HTTPS_URL.exec(value);
+  return match?.[1] ? match[1].toLowerCase() : null;
+}
+
+/**
+ * Kiểm bộ ảnh bìa theo đúng luật của trigger — cho nhánh khách (không có DB)
+ * và để báo lỗi sớm. Ở chế độ đăng nhập, trigger là chốt thật.
+ */
+export function assertCoverImages(images: readonly TripCoverImage[]): void {
+  if (images.length > COVER_IMAGES_MAX) {
+    throw new DataError(`Bộ ảnh bìa tối đa ${COVER_IMAGES_MAX} ảnh.`);
+  }
+  for (const image of images) {
+    for (const url of [image.url, image.thumbUrl]) {
+      const host = typeof url === 'string' ? httpsHost(url) : null;
+      if (host === null || !COVER_IMAGE_HOSTS.includes(host)) {
+        throw new DataError(
+          'Ảnh bìa phải là https từ nguồn được hỗ trợ (Unsplash, Wikimedia, Pinterest).',
+        );
+      }
+    }
+    if (image.link !== null) {
+      const host = httpsHost(image.link);
+      if (host === null || !COVER_LINK_HOSTS.includes(host)) {
+        throw new DataError('Đường dẫn nguồn ảnh bìa phải là https tới trang nguồn được hỗ trợ.');
+      }
+    }
+    if (image.credit !== null && image.credit.length > 200) {
+      throw new DataError('Ghi công ảnh bìa tối đa 200 ký tự.');
+    }
+    if (image.provider !== null && image.provider.length > 20) {
+      throw new DataError('Nguồn ảnh bìa tối đa 20 ký tự.');
+    }
+  }
+}
+
 export interface TripGroup {
   readonly id: string;
   readonly name: string;
@@ -212,15 +277,20 @@ function placeColumns(place?: TripPlace | null, cover?: TripCoverGallery | null)
     longitude: place?.longitude ?? null,
     place_provider: place?.provider ?? null,
     place_external_id: place?.externalId ?? null,
-    cover_images: images.map((image) => ({
-      url: image.url,
-      thumbUrl: image.thumbUrl,
-      credit: image.credit,
-      link: image.link,
-      provider: image.provider,
-    })),
+    cover_images: coverRows(images),
     cover_image_index: index,
   };
+}
+
+/** Chỉ đúng 5 khoá — trigger từ chối khoá lạ. */
+function coverRows(images: readonly TripCoverImage[]) {
+  return images.map((image) => ({
+    url: image.url,
+    thumbUrl: image.thumbUrl,
+    credit: image.credit,
+    link: image.link,
+    provider: image.provider,
+  }));
 }
 
 export async function createTrip(input: CreateTripInput): Promise<string> {
@@ -257,45 +327,111 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
   return created.id;
 }
 
+export interface TripDetailsInput {
+  readonly name: string;
+  /** 'YYYY-MM-DD' hoặc null. */
+  readonly startDate: string | null;
+  readonly endDate: string | null;
+}
+
+const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
+
 /**
- * Đổi điểm đến và ảnh bìa của chuyến đi đã tạo.
+ * Kiểm và chuẩn hoá tên + ngày. Dùng chung cho nhánh đăng nhập và nhánh khách
+ * để hai bên báo CÙNG thông báo lỗi; RPC update_trip_details kiểm lại ở DB.
+ */
+export function validateTripDetails(input: TripDetailsInput): TripDetailsInput {
+  const name = input.name.trim();
+  if (name === '') {
+    throw new DataError('Tên chuyến đi không được để trống.');
+  }
+  if (name.length > 120) {
+    throw new DataError('Tên chuyến đi tối đa 120 ký tự.');
+  }
+  for (const value of [input.startDate, input.endDate]) {
+    if (value !== null && !ISO_DATE.test(value)) {
+      throw new DataError(`Ngày "${value}" không đúng định dạng YYYY-MM-DD.`);
+    }
+  }
+  if (input.startDate && input.endDate && input.startDate > input.endDate) {
+    throw new DataError('Ngày kết thúc phải sau ngày bắt đầu.');
+  }
+  return { name, startDate: input.startDate, endDate: input.endDate };
+}
+
+/** Đổi tên và ngày của chuyến đi. Mọi thành viên đã nhận chỗ đều sửa được. */
+export async function updateTripDetails(tripId: string, input: TripDetailsInput): Promise<void> {
+  const valid = validateTripDetails(input);
+  unwrapVoid(
+    await supabase.rpc('update_trip_details', {
+      p_trip_id: tripId,
+      p_name: valid.name,
+      p_start_date: valid.startDate,
+      p_end_date: valid.endDate,
+    }),
+  );
+}
+
+/**
+ * Đổi điểm đến và ảnh bìa của chuyến đi đã tạo. Mọi thành viên đã nhận chỗ
+ * đều sửa được — qua RPC update_trip_place, không sửa thẳng bảng trips.
  *
- * Truyền null cho cả hai để gỡ bỏ. Ghi cả 11 cột mỗi lần thay vì chỉ ghi cột
- * đổi: bỏ sót một cột sẽ để lại mảnh dữ liệu của địa điểm cũ lẫn vào địa điểm
- * mới — kiểu lỗi rất khó nhìn ra vì màn hình vẫn hiện bình thường.
+ * Truyền null cho cả hai để gỡ bỏ. Gửi đủ mọi cột mỗi lần thay vì chỉ cột đổi:
+ * bỏ sót một cột sẽ để lại mảnh dữ liệu của địa điểm cũ lẫn vào địa điểm mới —
+ * kiểu lỗi rất khó nhìn ra vì màn hình vẫn hiện bình thường.
  */
 export async function updateTripPlace(
   tripId: string,
   place: TripPlace | null,
   cover: TripCoverGallery | null,
 ): Promise<void> {
-  const rows = unwrap(
-    await supabase.from('trips').update(placeColumns(place, cover)).eq('id', tripId).select('id'),
+  const columns = placeColumns(place, cover);
+  unwrapVoid(
+    await supabase.rpc('update_trip_place', {
+      p_trip_id: tripId,
+      p_place_name: columns.place_name,
+      p_place_address: columns.place_address,
+      p_place_country: columns.place_country,
+      p_latitude: columns.latitude,
+      p_longitude: columns.longitude,
+      p_place_provider: columns.place_provider,
+      p_place_external_id: columns.place_external_id,
+      p_cover_images: columns.cover_images,
+      p_cover_index: columns.cover_image_index,
+    }),
   );
-  assertTripUpdated(rows);
 }
 
 /**
- * RLS chỉ cho chủ chuyến sửa bảng trips. Người khác sửa thì PostgREST KHÔNG báo
- * lỗi — nó lọc hết dòng và trả về thành công với 0 dòng. Không kiểm số dòng,
- * thành viên thường chọn địa điểm xong thấy "đã lưu", mở lại vẫn là cũ.
+ * Đổi riêng ảnh đang hiển thị, không đụng tới danh sách hay địa điểm.
+ * Chỉ số ngoài bộ ảnh bị RPC từ chối — lỗi được ném ra, người gọi tự quyết.
  */
-function assertTripUpdated(rows: readonly unknown[]): void {
-  if (rows.length === 0) {
-    throw new DataError('Chỉ chủ chuyến đi mới đổi được địa điểm và ảnh bìa.', '42501');
+export async function updateCoverIndex(tripId: string, index: number): Promise<void> {
+  if (!Number.isInteger(index) || index < 0) {
+    throw new DataError('Vị trí ảnh bìa nằm ngoài bộ ảnh.');
   }
+  unwrapVoid(await supabase.rpc('set_trip_cover_index', { p_trip_id: tripId, p_index: index }));
 }
 
-/** Đổi riêng ảnh đang hiển thị, không đụng tới danh sách hay địa điểm. */
-export async function updateCoverIndex(tripId: string, index: number): Promise<void> {
-  const rows = unwrap(
-    await supabase
-      .from('trips')
-      .update({ cover_image_index: Math.max(0, index) })
-      .eq('id', tripId)
-      .select('id'),
+/**
+ * Lưu bộ ảnh bìa tải NỀN — chỉ khi điểm đến vẫn là `expectedPlaceKey`
+ * (placeKeyOf) và chuyến chưa có ảnh. So và ghi ở máy chủ trong một câu lệnh.
+ * false = điều kiện không còn đúng (ai đó vừa đổi điểm đến / đã chọn ảnh) —
+ * không phải lỗi, người gọi chỉ việc bỏ bộ ảnh vừa tải.
+ * Luôn bắt đầu từ ảnh đầu tiên (index 0), bỏ qua cover.index.
+ */
+export async function saveCoverIfPlaceUnchanged(
+  tripId: string,
+  expectedPlaceKey: string,
+  cover: TripCoverGallery,
+): Promise<boolean> {
+  return unwrap(
+    await supabase.rpc('set_trip_cover_if_empty', {
+      p_trip_id: tripId,
+      p_expected_place_key: expectedPlaceKey,
+      p_cover_images: coverRows(cover.images),
+    }),
   );
-  assertTripUpdated(rows);
 }
 
 export async function listTripGroups(tripId: string): Promise<TripGroup[]> {

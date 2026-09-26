@@ -21,6 +21,30 @@ export function formatDate(date: Date): string {
   return `${pad2(date.getDate())}/${pad2(date.getMonth() + 1)}/${date.getFullYear()}`;
 }
 
+/**
+ * Đọc ngày yyyy-MM-dd (cột `date` của Postgres) thành Date theo giờ máy.
+ * KHÔNG dùng new Date('2026-09-15'): chuỗi đó được hiểu là UTC nên lùi một
+ * ngày ở múi giờ âm.
+ */
+export function fromIsoDate(value: string | null): Date | null {
+  if (!value) return null;
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(value);
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, Number(match[3]));
+}
+
+/** Khoảng ngày của chuyến đi — cùng một cách viết ở mọi màn. null nếu chưa đặt ngày. */
+export function formatTripDateRange(start: string | null, end: string | null): string | null {
+  const from = fromIsoDate(start);
+  const to = fromIsoDate(end);
+  if (from && to) {
+    return start === end ? formatDate(from) : `${formatDate(from)} – ${formatDate(to)}`;
+  }
+  if (from) return `Từ ${formatDate(from)}`;
+  if (to) return `Đến ${formatDate(to)}`;
+  return null;
+}
+
 /** Ngày dạng yyyy-MM-dd để lưu vào cột `date` của Postgres. */
 export function toIsoDate(date: Date): string {
   return `${date.getFullYear()}-${pad2(date.getMonth() + 1)}-${pad2(date.getDate())}`;
@@ -48,11 +72,7 @@ export function parseDateTime(input: string): Date | null {
   const date = new Date(year, month - 1, day, hour, minute, 0, 0);
 
   // Bắt ngày không tồn tại: 31/02 sẽ bị Date tự trượt sang tháng 3.
-  if (
-    date.getFullYear() !== year ||
-    date.getMonth() !== month - 1 ||
-    date.getDate() !== day
-  ) {
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
     return null;
   }
 

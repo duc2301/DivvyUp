@@ -6,7 +6,7 @@ import { AppHeader } from '@/components/ui/app-header';
 import { Button } from '@/components/ui/button';
 import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconButton } from '@/components/ui/icon-button';
-import { Check, Trash2, X } from '@/components/ui/icons';
+import { Check, History, Trash2, X } from '@/components/ui/icons';
 import { PickerModal } from '@/components/ui/picker-modal';
 import { Screen } from '@/components/ui/screen';
 import { SectionCard } from '@/components/ui/section-card';
@@ -334,6 +334,20 @@ export default function ExpenseFormScreen() {
                   <View className="flex-row items-center gap-1">
                     {isEditing ? (
                       <IconButton
+                        icon={History}
+                        label="Xem lịch sử thay đổi"
+                        disabled={busy}
+                        onPress={() => {
+                          if (!tripId || !expenseId) return;
+                          router.push({
+                            pathname: '/trip/[tripId]/expense-history',
+                            params: { tripId, expenseId },
+                          });
+                        }}
+                      />
+                    ) : null}
+                    {isEditing ? (
+                      <IconButton
                         icon={Trash2}
                         label="Xoá khoản chi"
                         variant="danger"
@@ -393,7 +407,9 @@ export default function ExpenseFormScreen() {
             />
 
             <View>
-              <Text className="mb-1 text-sm font-medium text-foreground">Người đại diện đã trả</Text>
+              <Text className="mb-1 text-sm font-medium text-foreground">
+                Người đại diện đã trả
+              </Text>
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel="Chọn người đại diện đã trả"
@@ -456,9 +472,7 @@ export default function ExpenseFormScreen() {
                         onChangeText={(text) =>
                           setRows((current) =>
                             current.map((item) =>
-                              item.memberId === row.memberId
-                                ? { ...item, amountText: text }
-                                : item,
+                              item.memberId === row.memberId ? { ...item, amountText: text } : item,
                             ),
                           )
                         }

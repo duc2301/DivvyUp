@@ -1,7 +1,7 @@
 /**
  * Kiểu dữ liệu phản chiếu schema trong supabase/migrations/.
  *
- * Viết tay để khớp đúng 4 migration hiện có. Khi schema đổi, sinh lại bằng:
+ * Viết tay để khớp các migration trong supabase/migrations/. Khi schema đổi, sinh lại bằng:
  *   npx supabase gen types typescript --project-id <ref> > src/lib/supabase/database.types.ts
  *
  * HAI RÀNG BUỘC CỦA supabase-js, sai là mọi truy vấn suy ra kiểu `never`:
@@ -27,6 +27,24 @@ export interface CoverImageRow {
 
 export type TripRole = 'owner' | 'member';
 export type SplitModeDb = 'equal' | 'exact';
+export type NoteTemplateDb = 'plan' | 'notes' | 'description';
+export type ExpenseEventActionDb = 'create' | 'update' | 'void' | 'settle' | 'unsettle';
+
+/**
+ * Ảnh chụp trọn một khoản chi trong expense_events.before/after, do hàm nội bộ
+ * public.expense_snapshot() dựng. amount_minor là bigint → số JSON, vẫn phải
+ * qua toSafeMinor().
+ */
+export interface ExpenseSnapshotRow {
+  description: string;
+  amount_minor: number;
+  currency: string;
+  paid_by: string;
+  split_mode: SplitModeDb;
+  paid_at: string;
+  settled_at: string | null;
+  shares: { member_id: string; amount_minor: number }[];
+}
 
 /** Bảng chỉ cho đọc: ghi phải đi qua RPC. */
 type ReadOnly = Record<string, never>;
@@ -98,21 +116,11 @@ export interface Database {
           cover_images?: CoverImageRow[];
           cover_image_index?: number;
         };
-        Update: {
-          name?: string;
-          start_date?: string | null;
-          end_date?: string | null;
-          deleted_at?: string | null;
-          place_name?: string | null;
-          place_address?: string | null;
-          place_country?: string | null;
-          latitude?: number | null;
-          longitude?: number | null;
-          place_provider?: string | null;
-          place_external_id?: string | null;
-          cover_images?: CoverImageRow[];
-          cover_image_index?: number;
-        };
+        // Tên, ngày, địa điểm, ảnh bìa đổi qua RPC update_trip_details /
+        // update_trip_place / set_trip_cover_index (mọi thành viên). Policy
+        // UPDATE chỉ còn cho chủ chuyến — app chỉ dùng nó để xoá mềm.
+        // join_code/created_by/currency: trigger trips_guard_identity chặn.
+        Update: { deleted_at?: string | null };
         Relationships: [
           {
             foreignKeyName: 'trips_created_by_fkey';
@@ -218,9 +226,10 @@ export interface Database {
           settled_at: string | null;
           settled_by: string | null;
         };
-        // Không có policy INSERT: tạo khoản chi phải qua RPC create_expense().
+        // Không có policy INSERT/UPDATE: mọi thay đổi qua RPC create/update/
+        // void_expense, set_expense_settled — nơi ghi nhật ký expense_events.
         Insert: ReadOnly;
-        Update: { deleted_at?: string | null };
+        Update: ReadOnly;
         Relationships: [
           {
             foreignKeyName: 'expenses_trip_currency_fkey';
@@ -254,6 +263,103 @@ export interface Database {
           {
             foreignKeyName: 'expense_shares_member_id_fkey';
             columns: ['member_id'];
+            isOneToOne: false;
+            referencedRelation: 'trip_members';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+
+      trip_notes: {
+        Row: {
+          id: string;
+          trip_id: string;
+          title: string;
+          body: string;
+          template: NoteTemplateDb | null;
+          sort_order: number;
+          created_by: string;
+          /** Do trigger điền bằng auth.uid() ở mỗi lần ghi. */
+          updated_by: string | null;
+          created_at: string;
+          updated_at: string;
+          deleted_at: string | null;
+        };
+        // created_by mặc định auth.uid(); sort_order và updated_by do trigger điền.
+        Insert: {
+          id?: string;
+          trip_id: string;
+          title?: string;
+          body?: string;
+          template?: NoteTemplateDb | null;
+        };
+        // Không có policy DELETE: xoá = đặt deleted_at (một chiều).
+        Update: { title?: string; body?: string; deleted_at?: string | null };
+        Relationships: [
+          {
+            foreignKeyName: 'trip_notes_trip_id_fkey';
+            columns: ['trip_id'];
+            isOneToOne: false;
+            referencedRelation: 'trips';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'trip_notes_created_by_fkey';
+            columns: ['created_by'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'trip_notes_updated_by_fkey';
+            columns: ['updated_by'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+
+      expense_events: {
+        Row: {
+          id: string;
+          trip_id: string;
+          expense_id: string;
+          action: ExpenseEventActionDb;
+          actor_user_id: string | null;
+          actor_member_id: string | null;
+          before: ExpenseSnapshotRow | null;
+          after: ExpenseSnapshotRow | null;
+          created_at: string;
+        };
+        // Chỉ ghi bên trong RPC SECURITY DEFINER; client chỉ đọc.
+        Insert: ReadOnly;
+        Update: ReadOnly;
+        Relationships: [
+          {
+            foreignKeyName: 'expense_events_trip_id_fkey';
+            columns: ['trip_id'];
+            isOneToOne: false;
+            referencedRelation: 'trips';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'expense_events_expense_id_fkey';
+            columns: ['expense_id'];
+            isOneToOne: false;
+            referencedRelation: 'expenses';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'expense_events_actor_user_id_fkey';
+            columns: ['actor_user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'expense_events_actor_member_id_fkey';
+            columns: ['actor_member_id'];
             isOneToOne: false;
             referencedRelation: 'trip_members';
             referencedColumns: ['id'];
@@ -349,6 +455,43 @@ export interface Database {
       set_expense_settled: {
         Args: { p_expense_id: string; p_settled: boolean };
         Returns: undefined;
+      };
+      update_trip_details: {
+        Args: {
+          p_trip_id: string;
+          p_name: string;
+          /** 'YYYY-MM-DD' */
+          p_start_date: string | null;
+          p_end_date: string | null;
+        };
+        Returns: undefined;
+      };
+      update_trip_place: {
+        Args: {
+          p_trip_id: string;
+          p_place_name: string | null;
+          p_place_address: string | null;
+          p_place_country: string | null;
+          p_latitude: number | null;
+          p_longitude: number | null;
+          p_place_provider: string | null;
+          p_place_external_id: string | null;
+          p_cover_images: CoverImageRow[];
+          p_cover_index: number;
+        };
+        Returns: undefined;
+      };
+      set_trip_cover_index: {
+        Args: { p_trip_id: string; p_index: number };
+        Returns: undefined;
+      };
+      /**
+       * Ghi bộ ảnh bìa chỉ khi coalesce(place_external_id, place_name) còn bằng
+       * p_expected_place_key và chuyến chưa có ảnh. false = điều kiện đã đổi.
+       */
+      set_trip_cover_if_empty: {
+        Args: { p_trip_id: string; p_expected_place_key: string; p_cover_images: CoverImageRow[] };
+        Returns: boolean;
       };
       preview_trip_by_code: {
         Args: { p_join_code: string };

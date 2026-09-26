@@ -5,6 +5,8 @@ import {
   formatDate,
   formatDateTime,
   formatRelativeDateTime,
+  formatTripDateRange,
+  fromIsoDate,
   parseDateTime,
   toIsoDate,
 } from './datetime.ts';
@@ -71,6 +73,74 @@ describe('parseDateTime', () => {
     const original = new Date(2026, 8, 15, 19, 30, 0, 0);
     const roundTripped = parseDateTime(formatDateTime(original));
     assert.equal(roundTripped?.getTime(), original.getTime());
+  });
+});
+
+describe('fromIsoDate', () => {
+  test('ngày hợp lệ đọc đúng theo giờ máy, không lùi ngày vì UTC', () => {
+    const date = fromIsoDate('2026-09-15');
+    assert.ok(date);
+    assert.equal(date.getFullYear(), 2026);
+    assert.equal(date.getMonth(), 8);
+    assert.equal(date.getDate(), 15);
+    assert.equal(date.getHours(), 0);
+    assert.equal(date.getTime(), new Date(2026, 8, 15).getTime());
+  });
+
+  test('null trả về null', () => {
+    assert.equal(fromIsoDate(null), null);
+  });
+
+  test('chuỗi sai định dạng trả về null, không ném lỗi', () => {
+    assert.equal(fromIsoDate(''), null);
+    assert.equal(fromIsoDate('15/09/2026'), null);
+    assert.equal(fromIsoDate('2026-9-15'), null); // thiếu số 0 đứng đầu
+    assert.equal(fromIsoDate('2026-09-15T00:00:00'), null); // có phần giờ thì không khớp
+    assert.equal(fromIsoDate('hôm nay'), null);
+  });
+
+  test('đầu năm và cuối năm không bị trượt tháng', () => {
+    const jan1 = fromIsoDate('2026-01-01');
+    assert.ok(jan1);
+    assert.equal(jan1.getMonth(), 0);
+    assert.equal(jan1.getDate(), 1);
+
+    const dec31 = fromIsoDate('2026-12-31');
+    assert.ok(dec31);
+    assert.equal(dec31.getMonth(), 11);
+    assert.equal(dec31.getDate(), 31);
+  });
+});
+
+describe('formatTripDateRange', () => {
+  test('null nếu chưa đặt ngày nào', () => {
+    assert.equal(formatTripDateRange(null, null), null);
+  });
+
+  test('chỉ có ngày bắt đầu', () => {
+    assert.equal(formatTripDateRange('2026-09-15', null), 'Từ 15/09/2026');
+  });
+
+  test('chỉ có ngày kết thúc', () => {
+    assert.equal(formatTripDateRange(null, '2026-09-20'), 'Đến 20/09/2026');
+  });
+
+  test('cùng một ngày thì chỉ hiện một mốc, không hiện khoảng', () => {
+    assert.equal(formatTripDateRange('2026-09-15', '2026-09-15'), '15/09/2026');
+  });
+
+  test('có cả hai đầu, khác ngày thì hiện khoảng', () => {
+    assert.equal(formatTripDateRange('2026-09-15', '2026-09-20'), '15/09/2026 – 20/09/2026');
+  });
+
+  test('chuỗi sai định dạng ở một đầu thì coi như chưa có đầu đó', () => {
+    assert.equal(formatTripDateRange('không hợp lệ', '2026-09-20'), 'Đến 20/09/2026');
+    assert.equal(formatTripDateRange('2026-09-15', 'không hợp lệ'), 'Từ 15/09/2026');
+    assert.equal(formatTripDateRange('không hợp lệ', 'không hợp lệ'), null);
+  });
+
+  test('khoảng qua ranh giới năm không lệch ngày do múi giờ', () => {
+    assert.equal(formatTripDateRange('2026-12-30', '2027-01-02'), '30/12/2026 – 02/01/2027');
   });
 });
 

@@ -9,20 +9,26 @@
 
 import AsyncStorage from '@react-native-async-storage/async-storage';
 
-import type { CurrencyCode } from '@/lib/money';
+import type { CurrencyCode, LedgerExpense } from '@/lib/money';
 import { computeBalances } from '@/lib/money';
-import type { StoredExpense, StoredMember, StoredTrip } from '@/lib/storage/local-store';
+import type { StoredExpense, StoredMember, StoredNote, StoredTrip } from '@/lib/storage/local-store';
 import { localId, localStore } from '@/lib/storage/local-store';
 import { DataError } from '@/lib/supabase/errors';
 
 import type {
   ExpenseDetail,
+  ExpenseEvent,
+  ExpenseEventAction,
+  ExpenseSnapshot,
   ExpenseSummary,
   NamedBalance,
   RecordSettlementInput,
   SaveExpenseInput,
+  TripLedger,
 } from './expenses';
 import * as remoteExpenses from './expenses';
+import type { NoteTemplateKey, TripNote } from './notes';
+import * as remoteNotes from './notes';
 import type {
   CreateTripInput,
   TripCoverGallery,
@@ -33,6 +39,11 @@ import type {
   TripSummary,
 } from './trips';
 import * as remoteTrips from './trips';
+
+export type { ExpenseEvent, ExpenseEventAction, ExpenseSnapshot, TripLedger } from './expenses';
+export type { NoteTemplateKey, TripNote } from './notes';
+export { NOTE_TEMPLATE_KEYS } from './notes';
+export { placeKeyOf } from './trips';
 
 const GUEST_KEY = 'divvyup_is_guest';
 
@@ -89,6 +100,32 @@ export async function createTrip(input: CreateTripInput): Promise<string> {
   return remoteTrips.createTrip(input);
 }
 
+async function findLocalTrip(tripId: string): Promise<StoredTrip> {
+  const trip = (await localStore.listTrips()).find((item) => item.id === tripId);
+  if (!trip) throw new DataError('Không tìm thấy chuyến đi trong dữ liệu cục bộ.');
+  return trip;
+}
+
+/** Đổi tên và ngày ('YYYY-MM-DD') của chuyến đi. Mọi thành viên sửa được. */
+export async function updateTripDetails(
+  tripId: string,
+  input: { name: string; startDate: string | null; endDate: string | null },
+): Promise<void> {
+  if (await isGuestMode()) {
+    const valid = remoteTrips.validateTripDetails(input);
+    const trip = await findLocalTrip(tripId);
+    await localStore.saveTrip({
+      ...trip,
+      name: valid.name,
+      startDate: valid.startDate,
+      endDate: valid.endDate,
+      updatedAt: new Date().toISOString(),
+    });
+    return;
+  }
+  await remoteTrips.updateTripDetails(tripId, input);
+}
+
 export async function updateTripPlace(
   tripId: string,
   place: TripPlace | null,
@@ -96,23 +133,61 @@ export async function updateTripPlace(
 ): Promise<void> {
   const next = cover ?? { images: [], index: 0 };
   if (await isGuestMode()) {
-    const trip = (await localStore.listTrips()).find((item) => item.id === tripId);
-    if (!trip) throw new DataError('Không tìm thấy chuyến đi trong dữ liệu cục bộ.');
+    const trip = await findLocalTrip(tripId);
+    // Cùng luật với trigger trips_validate_cover: chỉ kiểm khi bộ ảnh đổi, để
+    // ảnh lưu từ bản app cũ không chặn việc sửa điểm đến.
+    if (JSON.stringify(next.images) !== JSON.stringify(trip.cover.images)) {
+      remoteTrips.assertCoverImages(next.images);
+    }
     await localStore.saveTrip({ ...trip, place, cover: next, updatedAt: new Date().toISOString() });
     return;
   }
   await remoteTrips.updateTripPlace(tripId, place, next);
 }
 
-/** Đổi riêng ảnh đang hiển thị khi người dùng lướt carousel. */
+/**
+ * Lưu bộ ảnh bìa tải nền — chỉ khi điểm đến vẫn là `expectedPlaceKey`
+ * (placeKeyOf) và chuyến chưa có ảnh. false = điều kiện đã đổi (không phải
+ * lỗi): người gọi bỏ bộ ảnh vừa tải, không ghi đè lựa chọn mới.
+ */
+export async function saveCoverIfPlaceUnchanged(
+  tripId: string,
+  expectedPlaceKey: string,
+  cover: TripCoverGallery,
+): Promise<boolean> {
+  if (await isGuestMode()) {
+    const trip = await findLocalTrip(tripId);
+    // Cùng điều kiện với RPC set_trip_cover_if_empty.
+    if (
+      trip.place === null ||
+      remoteTrips.placeKeyOf(trip.place) !== expectedPlaceKey ||
+      trip.cover.images.length > 0
+    ) {
+      return false;
+    }
+    remoteTrips.assertCoverImages(cover.images);
+    await localStore.saveTrip({
+      ...trip,
+      cover: { images: cover.images, index: 0 },
+      updatedAt: new Date().toISOString(),
+    });
+    return true;
+  }
+  return remoteTrips.saveCoverIfPlaceUnchanged(tripId, expectedPlaceKey, cover);
+}
+
+/**
+ * Đổi riêng ảnh đang hiển thị khi người dùng lướt carousel. Ném lỗi thật
+ * (không nuốt) — người gọi tự quyết có bỏ qua hay không.
+ */
 export async function updateCoverIndex(tripId: string, index: number): Promise<void> {
   if (await isGuestMode()) {
-    const trip = (await localStore.listTrips()).find((item) => item.id === tripId);
-    if (!trip) return;
-    const clamped = trip.cover.images.length === 0
-      ? 0
-      : Math.min(Math.max(index, 0), trip.cover.images.length - 1);
-    await localStore.saveTrip({ ...trip, cover: { ...trip.cover, index: clamped } });
+    const trip = await findLocalTrip(tripId);
+    // Cùng kiểm tra với RPC set_trip_cover_index.
+    if (!Number.isInteger(index) || index < 0 || index >= Math.max(trip.cover.images.length, 1)) {
+      throw new DataError('Vị trí ảnh bìa nằm ngoài bộ ảnh.');
+    }
+    await localStore.saveTrip({ ...trip, cover: { ...trip.cover, index } });
     return;
   }
   await remoteTrips.updateCoverIndex(tripId, index);
@@ -234,6 +309,91 @@ export async function joinTripByCode(joinCode: string, memberId: string): Promis
 }
 
 // ---------------------------------------------------------------------------
+// Ghi chú chuyến đi
+// ---------------------------------------------------------------------------
+
+/** Khách chỉ có một người dùng thiết bị — "bạn" là chỗ isMe của chuyến. */
+async function guestActorMemberId(tripId: string): Promise<string | null> {
+  return (await localStore.listMembers(tripId)).find((member) => member.isMe)?.id ?? null;
+}
+
+async function findLocalNote(noteId: string): Promise<StoredNote> {
+  const found = (await localStore.listAllNotes()).find((note) => note.id === noteId);
+  if (!found) throw new DataError('Không tìm thấy ghi chú, hoặc bạn không có quyền sửa.', '42501');
+  return found;
+}
+
+export async function listTripNotes(tripId: string): Promise<TripNote[]> {
+  if (await isGuestMode()) return localStore.listNotes(tripId);
+  return remoteNotes.listTripNotes(tripId);
+}
+
+export async function createTripNote(
+  tripId: string,
+  input: { title: string; body: string; template: NoteTemplateKey | null },
+): Promise<string> {
+  if (await isGuestMode()) {
+    const valid = remoteNotes.validateNoteInput(input);
+    const template = remoteNotes.assertNoteTemplate(input.template);
+    await findLocalTrip(tripId);
+    const existing = await localStore.listNotes(tripId);
+    const now = new Date().toISOString();
+    const note: StoredNote = {
+      id: localId(),
+      tripId,
+      title: valid.title,
+      body: valid.body,
+      template,
+      // Cùng quy tắc với trigger set_trip_note_actor: nối vào cuối.
+      sortOrder: existing.reduce((max, item) => Math.max(max, item.sortOrder + 1), 0),
+      createdAt: now,
+      updatedAt: now,
+      updatedByMemberId: await guestActorMemberId(tripId),
+    };
+    await localStore.saveNote(note);
+    return note.id;
+  }
+  return remoteNotes.createTripNote(tripId, input);
+}
+
+/**
+ * Sửa ghi chú với khoá lạc quan: `expectedUpdatedAt` là TripNote.updatedAt lúc
+ * mở ghi chú. Đã có người sửa sau đó → DataError NOTE_STALE_MESSAGE.
+ */
+export async function updateTripNote(
+  noteId: string,
+  input: { title: string; body: string },
+  expectedUpdatedAt: string,
+): Promise<void> {
+  if (await isGuestMode()) {
+    const valid = remoteNotes.validateNoteInput(input);
+    const found = await findLocalNote(noteId);
+    // Cùng khoá lạc quan với nhánh đăng nhập (khách có thể mở hai màn cùng lúc).
+    if (found.updatedAt !== expectedUpdatedAt) {
+      throw new DataError(remoteNotes.NOTE_STALE_MESSAGE, '40001');
+    }
+    await localStore.saveNote({
+      ...found,
+      title: valid.title,
+      body: valid.body,
+      updatedAt: new Date().toISOString(),
+      updatedByMemberId: await guestActorMemberId(found.tripId),
+    });
+    return;
+  }
+  await remoteNotes.updateTripNote(noteId, input, expectedUpdatedAt);
+}
+
+export async function deleteTripNote(noteId: string): Promise<void> {
+  if (await isGuestMode()) {
+    await findLocalNote(noteId);
+    await localStore.deleteNote(noteId);
+    return;
+  }
+  await remoteNotes.deleteTripNote(noteId);
+}
+
+// ---------------------------------------------------------------------------
 // Khoản chi
 // ---------------------------------------------------------------------------
 
@@ -250,14 +410,66 @@ function toSummary(expense: StoredExpense): ExpenseSummary {
   };
 }
 
+/**
+ * Ghi nhật ký cho nhánh khách — cùng chỗ ghi với RPC trên server (tạo, sửa,
+ * huỷ, đánh dấu/bỏ đánh dấu xong), cùng hình dạng before/after.
+ */
+async function logGuestEvent(
+  tripId: string,
+  expenseId: string,
+  action: ExpenseEventAction,
+  before: ExpenseSnapshot | null,
+  after: ExpenseSnapshot | null,
+): Promise<void> {
+  await localStore.appendExpenseEvent({
+    id: localId(),
+    tripId,
+    expenseId,
+    action,
+    actorMemberId: await guestActorMemberId(tripId),
+    at: new Date().toISOString(),
+    before,
+    after,
+  });
+}
+
+/**
+ * Khách không có transaction: khoản chi đã ghi xong mà nhật ký lỗi thì KHÔNG
+ * được ném lỗi chung chung — UI sẽ hiểu là "chưa lưu" và người dùng nhập lại,
+ * sinh khoản trùng. Báo rõ phần nào đã xong.
+ */
+async function logGuestEventAfterSave(
+  what: string,
+  ...args: Parameters<typeof logGuestEvent>
+): Promise<void> {
+  try {
+    await logGuestEvent(...args);
+  } catch (error) {
+    const detail = error instanceof Error ? ` (${error.message})` : '';
+    throw new DataError(`Đã lưu ${what} nhưng chưa ghi được lịch sử${detail}.`);
+  }
+}
+
 export async function setExpenseSettled(expenseId: string, settled: boolean): Promise<void> {
   if (await isGuestMode()) {
     const found = (await localStore.listAllExpenses()).find((item) => item.id === expenseId);
     if (!found) throw new DataError('Không tìm thấy khoản chi.');
-    await localStore.saveExpense({
+    const next: StoredExpense = {
       ...found,
       settledAt: settled ? (found.settledAt ?? new Date().toISOString()) : null,
-    });
+    };
+    await localStore.saveExpense(next);
+    // Bấm lại trạng thái đang có thì không ghi — cùng quy tắc với RPC.
+    if ((found.settledAt ?? null) !== (next.settledAt ?? null)) {
+      await logGuestEventAfterSave(
+        'trạng thái khoản chi',
+        found.tripId,
+        found.id,
+        settled ? 'settle' : 'unsettle',
+        remoteExpenses.snapshotOf(found),
+        remoteExpenses.snapshotOf(next),
+      );
+    }
     return;
   }
   await remoteExpenses.setExpenseSettled(expenseId, settled);
@@ -334,6 +546,14 @@ export async function createExpense(input: SaveExpenseInput): Promise<string> {
       shares: input.shares,
     };
     await localStore.saveExpense(expense);
+    await logGuestEventAfterSave(
+      'khoản chi',
+      expense.tripId,
+      expense.id,
+      'create',
+      null,
+      remoteExpenses.snapshotOf(expense),
+    );
     return expense.id;
   }
   return remoteExpenses.createExpense(input);
@@ -344,7 +564,7 @@ export async function updateExpense(expenseId: string, input: SaveExpenseInput):
     const found = (await localStore.listAllExpenses()).find((item) => item.id === expenseId);
     if (!found) throw new DataError('Không tìm thấy khoản chi.');
     await assertGuestExpense({ ...input, tripId: found.tripId });
-    await localStore.saveExpense({
+    const next: StoredExpense = {
       ...found,
       description: input.description.trim(),
       total: input.total,
@@ -355,7 +575,16 @@ export async function updateExpense(expenseId: string, input: SaveExpenseInput):
       // Cùng quy tắc với update_expense trên server: sửa là bỏ đánh dấu xong,
       // để số tiền mới được tính lại vào số dư.
       settledAt: null,
-    });
+    };
+    await localStore.saveExpense(next);
+    await logGuestEventAfterSave(
+      'khoản chi',
+      found.tripId,
+      found.id,
+      'update',
+      remoteExpenses.snapshotOf(found),
+      remoteExpenses.snapshotOf(next),
+    );
     return;
   }
   await remoteExpenses.updateExpense(expenseId, input);
@@ -363,6 +592,13 @@ export async function updateExpense(expenseId: string, input: SaveExpenseInput):
 
 export async function voidExpense(expenseId: string): Promise<void> {
   if (await isGuestMode()) {
+    const found = (await localStore.listAllExpenses()).find((item) => item.id === expenseId);
+    if (!found) throw new DataError('Không tìm thấy khoản chi.');
+    // Khách xoá cứng khoản chi; ảnh chụp "trước" trong nhật ký là bản duy nhất
+    // còn lại — nên ghi nhật ký TRƯỚC. Ghi lỗi thì chưa xoá gì (người dùng thử
+    // lại được); xoá lỗi sau khi đã ghi thì chỉ thừa một dòng "huỷ" cho khoản
+    // vẫn còn, không mất dữ liệu.
+    await logGuestEvent(found.tripId, found.id, 'void', remoteExpenses.snapshotOf(found), null);
     await localStore.deleteExpense(expenseId);
     return;
   }
@@ -408,4 +644,47 @@ export async function getTripBalances(tripId: string): Promise<NamedBalance[]> {
 export async function recordSettlement(input: RecordSettlementInput): Promise<void> {
   if (await isGuestMode()) return guestUnsupported('ghi nhận tất toán');
   await remoteExpenses.recordSettlement(input);
+}
+
+// ---------------------------------------------------------------------------
+// Nhật ký khoản chi + sổ cái
+// ---------------------------------------------------------------------------
+
+/** Lịch sử của một khoản chi, mới nhất trước. */
+export async function listExpenseEvents(expenseId: string): Promise<ExpenseEvent[]> {
+  if (await isGuestMode()) {
+    // Bỏ tripId (chỉ dùng để lưu) cho đúng hình dạng của nhánh đăng nhập.
+    return (await localStore.listExpenseEvents(expenseId)).map(
+      ({ tripId: _tripId, ...event }): ExpenseEvent => event,
+    );
+  }
+  return remoteExpenses.listExpenseEvents(expenseId);
+}
+
+/**
+ * Dữ liệu gốc cho bảng kê / nợ từng cặp (src/lib/money/ledger.ts). Khách không
+ * có tất toán nên settlements luôn rỗng.
+ */
+export async function listTripLedger(tripId: string): Promise<TripLedger> {
+  if (await isGuestMode()) {
+    const expenses = await localStore.listExpenses(tripId);
+    return {
+      expenses: expenses
+        .slice()
+        .sort((a, b) => a.paidAt.localeCompare(b.paidAt))
+        .map(
+          (expense): LedgerExpense => ({
+            id: expense.id,
+            description: expense.description,
+            paidAt: expense.paidAt,
+            payerId: expense.paidByMemberId,
+            total: expense.total,
+            shares: expense.shares,
+            excluded: Boolean(expense.settledAt),
+          }),
+        ),
+      settlements: [],
+    };
+  }
+  return remoteExpenses.listTripLedger(tripId);
 }

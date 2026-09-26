@@ -12,7 +12,8 @@ auth.users → profiles
                 │        └──► expense_shares─┤
                 └──► settlements ────────────┘
 
-                view trip_balances  (net = đã ứng − phải gánh + đã trả − đã nhận)
+                view trip_balances  (net = đã ứng − phải gánh + đã trả − đã nhận,
+                                      bỏ qua khoản chi đã đánh dấu "đã xong")
 ```
 
 **Điểm then chốt: `trip_members` không phải tài khoản.** Nó là một cái tên do người tổ chức nhập, `user_id` để trống. Khi người đó được mời và nhận chỗ, `user_id` mới được gắn. Nhờ vậy người chưa cài app vẫn có công nợ đầy đủ.
@@ -31,8 +32,14 @@ Chạy **đúng thứ tự**, mỗi file một lần, trong SQL Editor của das
 | 4 | `migrations/20260915_1130_settlements_balances.sql` | settlements, view trip_balances |
 | 5 | `migrations/20260916_1000_fix_trip_balances_type.sql` | ép `net_minor` về bigint (xem ghi chú trong file) |
 | 6 | `migrations/20260916_1010_fix_trip_insert_visibility.sql` | người tạo luôn thấy chuyến đi của mình (xem ghi chú trong file) |
+| 7 | `migrations/20260916_1020_trip_place.sql` | điểm đến của chuyến đi (cột `place_*`, toạ độ) |
+| 8 | `migrations/20260916_1030_trip_cover_gallery.sql` | bộ ảnh bìa `cover_images` + `cover_image_index`, gỡ 4 cột ảnh đơn |
+| 9 | `migrations/20260916_1040_lock_trip_members.sql` | chặn xoá thành viên, chặn tự nâng quyền. **Không bao giờ chạy lại sau số 10** (xem đầu file 10) |
+| 10 | `migrations/20260917_1000_harden_members_settlements.sql` | siết thành viên/tất toán, xoá mềm một chiều, `is_privileged_session()` |
+| 11 | `migrations/20260917_1100_profile_payment_settled.sql` | ảnh đại diện, mã QR nhận tiền (Storage), khoản chi "đã xong" |
+| 12 | `migrations/20260925_1000_trip_collab_notes_history.sql` | thành viên sửa chuyến qua RPC, khoá `join_code`/`created_by`/`currency`, bảng `trip_notes`, nhật ký `expense_events`, bỏ policy UPDATE của `expenses` |
 
-Xong thì chạy `verify.sql` — **11 truy vấn, tất cả phải trả về 0 dòng**.
+Xong thì chạy `verify.sql` — **19 truy vấn, tất cả phải trả về 0 dòng**.
 
 ## Những quyết định đáng nhớ
 
@@ -46,7 +53,11 @@ Xong thì chạy `verify.sql` — **11 truy vấn, tất cả phải trả về 
 
 **Thành viên không lọt được sang chuyến đi khác.** `trip_members.group_id` tham chiếu composite `(id, trip_id)` của `trip_groups`; người trả và người gánh được trigger `check_member_belongs_to_trip` kiểm.
 
-**`expenses` và `expense_shares` không có policy INSERT.** Cố ý — tạo khoản chi bắt buộc qua RPC `create_expense()`. Client không tạo được khoản chi lệch tổng dù cố tình.
+**`expenses` và `expense_shares` không có policy INSERT, `expenses` không có policy UPDATE (từ migration 12).** Cố ý — mọi thay đổi khoản chi bắt buộc qua RPC `create_expense()` / `update_expense()` / `void_expense()` / `set_expense_settled()`. Client không tạo được khoản chi lệch tổng dù cố tình, và không vòng qua được nhật ký.
+
+**Nhật ký `expense_events` ghi bên trong 4 RPC trên**, cùng transaction với thay đổi: mỗi dòng giữ ảnh chụp trọn khoản chi trước/sau (mô tả, số tiền, người trả, phần chia). Bảng chỉ có policy SELECT — không ai sửa được lịch sử.
+
+**Sửa chuyến đi: mọi thành viên qua RPC, không qua policy.** `update_trip_details`, `update_trip_place`, `set_trip_cover_index` chỉ chạm đúng cột được phép. Policy UPDATE của `trips` vẫn chỉ cho chủ chuyến (app chỉ dùng để xoá mềm). Trigger `trips_guard_identity` chặn đổi `join_code`/`created_by`/`currency` ngoài phiên quản trị.
 
 **Cột `user_id` không sửa được bằng UPDATE thường.** Trigger `protect_trip_member_identity` chặn. Cửa duy nhất là RPC `join_trip_by_code()`, và nó mở khoá bằng `set_config('divvyup.allow_identity_change', 'on', true)` — cờ chỉ tồn tại trong transaction đó, PostgREST không cho client tự đặt.
 

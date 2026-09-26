@@ -3,29 +3,47 @@ import { useCallback, useRef, useState } from 'react';
 import { FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import type { TransferPerson } from '@/components/money/transfer-row';
+import { TransferRow } from '@/components/money/transfer-row';
 import { Avatar } from '@/components/ui/avatar';
-import { Button } from '@/components/ui/button';
-import { Circle, CircleCheck, ChevronRight, Plus, QrCode } from '@/components/ui/icons';
-import type { PaymentTarget } from '@/components/ui/payment-sheet';
-import { PaymentSheet } from '@/components/ui/payment-sheet';
+import {
+  CalendarDays,
+  ChevronRight,
+  Circle,
+  CircleCheck,
+  Info,
+  NotebookPen,
+  Pencil,
+  Plus,
+} from '@/components/ui/icons';
 import { SegmentedControl } from '@/components/ui/segmented-control';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
 import { TripHero } from '@/components/ui/trip-hero';
 import { WeatherSummary } from '@/components/weather/weather-summary';
 import { useSessionContext } from '@/features/auth/session-context';
+import { useBackgroundCover } from '@/features/place/use-background-cover';
 import { useTripForecast } from '@/features/weather/use-trip-forecast';
 import type { ExpenseSummary } from '@/lib/data/expenses';
 import {
   getTrip,
   getTripBalances,
   listAllExpenses,
+  listTripLedger,
   listTripMembers,
   setExpenseSettled,
   updateCoverIndex,
 } from '@/lib/data/manager';
 import { describeError, useAsync } from '@/lib/data/use-async';
-import { formatRelativeDateTime } from '@/lib/datetime';
-import { formatMoney, money, simplifyDebts, sumMoney } from '@/lib/money';
+import { formatRelativeDateTime, formatTripDateRange } from '@/lib/datetime';
+import {
+  applyTransfers,
+  formatMoney,
+  money,
+  pairwiseDebts,
+  simplifyDebts,
+  sumMoney,
+} from '@/lib/money';
+import { DataError } from '@/lib/supabase/errors';
 
 type Tab = 'expenses' | 'balances' | 'members';
 
@@ -36,6 +54,8 @@ const TABS = [
 ];
 
 const NO_EXPENSES: readonly ExpenseSummary[] = [];
+
+type SettleMode = 'simplified' | 'direct';
 
 /**
  * Màn chuyến đi.
@@ -54,9 +74,11 @@ export default function TripScreen() {
   const tripId = Array.isArray(params.tripId) ? params.tripId[0] : params.tripId;
 
   const [tab, setTab] = useState<Tab>('expenses');
-  const [payment, setPayment] = useState<PaymentTarget | null>(null);
   const [settlingId, setSettlingId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  // Mặc định tối giản (ít lần chuyển nhất); "Trả trực tiếp" cho ai muốn trả
+  // đúng người mình nợ theo từng khoản.
+  const [settleMode, setSettleMode] = useState<SettleMode>('simplified');
   const { userId: myUserId, isGuest } = useSessionContext();
 
   const { data, error, loading, reload } = useAsync(async () => {
@@ -70,6 +92,34 @@ export default function TripScreen() {
     return { trip, members, expenses, balances };
   }, [tripId]);
 
+  // Nợ trực tiếp cần cả phần chia của mọi khoản — chỉ tải khi đang xem tab Số
+  // dư, không kéo thêm cả sổ cái mỗi lần quay lại màn. Tính TRONG hàm async để
+  // dữ liệu lệch (MoneyError) rơi vào trạng thái lỗi, không làm sập cả màn.
+  const needsLedger = tab === 'balances';
+  const direct = useAsync(async () => {
+    if (!tripId || !needsLedger) return null;
+    // Tải số dư máy chủ CÙNG lúc để đối chiếu: nợ trực tiếp tính từ sổ cái phải
+    // đưa mọi người về đúng số dư máy chủ. Lệch (có người vừa sửa khoản chi giữa
+    // hai lần tải) thì báo lỗi, không hiện con số người dùng có thể chuyển nhầm.
+    const [trip, ledger, balances] = await Promise.all([
+      getTrip(tripId),
+      listTripLedger(tripId),
+      getTripBalances(tripId),
+    ]);
+    const debts = pairwiseDebts(ledger.expenses, ledger.settlements, trip.currency);
+    const remaining = applyTransfers(balances, debts);
+    if (remaining.some((balance) => balance.net.minor !== 0)) {
+      throw new DataError(
+        'Số liệu vừa thay đổi trong lúc tải (có người đang sửa khoản chi). Hãy thử lại.',
+      );
+    }
+    return debts;
+  }, [tripId, needsLedger]);
+  const reloadAll = (): void => {
+    reload();
+    direct.reload();
+  };
+
   // Bỏ qua lần focus ĐẦU TIÊN: useAsync đã tự chạy trong useEffect của nó rồi.
   const firstFocus = useRef(true);
   useFocusEffect(
@@ -79,11 +129,15 @@ export default function TripScreen() {
         return;
       }
       reload();
-    }, [reload]),
+      direct.reload();
+    }, [reload, direct.reload]),
   );
 
   // Dự báo tự dùng bộ nhớ đệm 3 tiếng — tải lại màn chuyến đi không gọi mạng lại.
   const weather = useTripForecast(data?.trip ?? null);
+
+  // Vừa đổi địa điểm (bộ ảnh rỗng) → tải ảnh bìa ở nền rồi tải lại màn.
+  const cover = useBackgroundCover(data?.trip ?? null, reload);
 
   const memberOf = (memberId: string) => data?.members.find((member) => member.id === memberId);
   const nameOf = (memberId: string): string => memberOf(memberId)?.displayName ?? 'Không rõ';
@@ -116,7 +170,7 @@ export default function TripScreen() {
     setActionError(null);
     try {
       await setExpenseSettled(expense.id, expense.settledAt === null);
-      reload();
+      reloadAll();
     } catch (caught) {
       setActionError(describeError(caught));
     } finally {
@@ -125,6 +179,27 @@ export default function TripScreen() {
   };
 
   const transfers = data ? simplifyDebts(data.balances) : [];
+  // Nợ trực tiếp từng cặp (đã bù trừ) — tính từ khoản chi gốc, cùng đích với
+  // tối giản nhưng mỗi dòng truy ngược được về từng khoản.
+  const directDebts = direct.data ?? [];
+  const shownTransfers = settleMode === 'simplified' ? transfers : directDebts;
+
+  const personOf = (memberId: string): TransferPerson => {
+    const member = memberOf(memberId);
+    return {
+      name: member?.displayName ?? 'Không rõ',
+      avatarUrl: member?.avatarUrl ?? null,
+      pending: !member?.claimed,
+    };
+  };
+
+  const openBalanceDetail = (from?: string, to?: string): void => {
+    if (!tripId) return;
+    router.push({
+      pathname: '/trip/[tripId]/balances',
+      params: from && to ? { tripId, from, to, mode: settleMode } : { tripId },
+    });
+  };
   const hasMembers = (data?.members.length ?? 0) > 0;
 
   // Tổng chi của cả chuyến. Cộng qua sumMoney chứ không cộng số trần: nó chặn
@@ -135,7 +210,6 @@ export default function TripScreen() {
         data.trip.currency,
       )
     : money(0, 'VND');
-
 
   const goToPlace = (): void => {
     if (!tripId) return;
@@ -170,12 +244,17 @@ export default function TripScreen() {
         // đổi, thiếu index thì hero đứng yên ở ảnh cũ trong khi thẻ ở danh sách
         // đã đổi.
         key={`${coverImages.map((image) => image.url).join('|')}#${data?.trip.cover.index ?? 0}`}
-        loading={data === null}
+        loading={data === null || cover.loading}
         images={coverImages}
         initialIndex={data?.trip.cover.index ?? 0}
         onEditPlace={goToPlace}
         onChangeIndex={(next) => {
-          if (tripId) void updateCoverIndex(tripId, next).catch(() => undefined);
+          if (!tripId) return;
+          // Lưu vị trí ảnh là việc phụ, nhưng hỏng thì phải nói: im lặng thì mở
+          // lại thấy ảnh cũ mà không biết vì sao.
+          updateCoverIndex(tripId, next).catch((caught: unknown) =>
+            setActionError(`Chưa lưu được ảnh bìa đang chọn: ${describeError(caught)}`),
+          );
         }}
       />
 
@@ -199,7 +278,7 @@ export default function TripScreen() {
                     data.trip.place ? 'Đổi địa điểm chuyến đi' : 'Chọn địa điểm chuyến đi'
                   }
                   onPress={goToPlace}
-                  className="mt-1 flex-row items-center self-start">
+                  className="min-h-11 flex-row items-center self-start">
                   <Text className="text-sm text-muted-foreground">
                     {data.trip.place
                       ? `📍 ${data.trip.place.name}${
@@ -211,6 +290,39 @@ export default function TripScreen() {
                     {data.trip.place ? 'Đổi' : 'Chọn'} ›
                   </Text>
                 </Pressable>
+                <Pressable
+                  accessibilityRole="button"
+                  accessibilityLabel="Sửa tên và ngày chuyến đi"
+                  onPress={() =>
+                    router.push({
+                      pathname: '/trip/[tripId]/edit',
+                      params: { tripId: data.trip.id },
+                    })
+                  }
+                  className="min-h-11 flex-row items-center gap-1.5 self-start">
+                  <CalendarDays size={14} className="text-muted-foreground" />
+                  <Text className="text-sm text-muted-foreground">
+                    {formatTripDateRange(data.trip.startDate, data.trip.endDate) ?? 'Chưa đặt ngày'}
+                  </Text>
+                  <Pencil size={13} className="text-accent-strong" />
+                </Pressable>
+                {cover.loading ? (
+                  <Text className="mt-1 text-xs text-muted-foreground">
+                    Đang tìm ảnh bìa cho {data.trip.place?.name}…
+                  </Text>
+                ) : null}
+                {cover.error ? (
+                  <Pressable
+                    accessibilityRole="button"
+                    accessibilityLabel="Thử tải lại ảnh bìa"
+                    onPress={cover.retry}
+                    className="min-h-11 justify-center self-start">
+                    <Text className="text-xs text-negative">
+                      Chưa tải được ảnh bìa: {cover.error}{' '}
+                      <Text className="font-semibold">Thử lại ›</Text>
+                    </Text>
+                  </Pressable>
+                ) : null}
               </View>
 
               <View className="items-end">
@@ -224,9 +336,27 @@ export default function TripScreen() {
             <WeatherSummary
               state={weather}
               onOpen={() =>
-                router.push({ pathname: '/trip/[tripId]/weather', params: { tripId: data.trip.id } })
+                router.push({
+                  pathname: '/trip/[tripId]/weather',
+                  params: { tripId: data.trip.id },
+                })
               }
             />
+
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel="Ghi chú chuyến đi"
+              onPress={() =>
+                router.push({ pathname: '/trip/[tripId]/notes', params: { tripId: data.trip.id } })
+              }
+              className="mt-3 min-h-12 flex-row items-center gap-3 rounded-2xl bg-muted/60 px-4 active:bg-muted">
+              <NotebookPen size={18} className="text-primary" />
+              <Text className="min-w-0 flex-1 text-sm font-medium text-foreground">
+                Ghi chú chuyến đi
+              </Text>
+              <Text className="text-xs text-muted-foreground">Kế hoạch, lưu ý…</Text>
+              <ChevronRight size={18} className="text-muted-foreground" />
+            </Pressable>
 
             <View className="mt-5">
               <SegmentedControl
@@ -241,7 +371,9 @@ export default function TripScreen() {
                 sách: luôn trong tầm tay, không bị cuộn mất khi có nhiều khoản. */}
             <Pressable
               accessibilityRole="button"
-              accessibilityLabel={hasMembers ? 'Thêm khoản chi' : 'Thêm thành viên trước khi ghi khoản chi'}
+              accessibilityLabel={
+                hasMembers ? 'Thêm khoản chi' : 'Thêm thành viên trước khi ghi khoản chi'
+              }
               onPress={addExpense}
               className="mt-3 min-h-12 flex-row items-center justify-center gap-2 rounded-full bg-primary px-5 active:opacity-80">
               <Plus size={20} className="text-primary-foreground" />
@@ -327,46 +459,50 @@ export default function TripScreen() {
                       <Text className="mb-2 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
                         Chi tiết người trả
                       </Text>
-                      <Text className="mb-1 text-xs text-muted-foreground">
-                        Chạm một dòng để xem mã QR nhận tiền của người nhận.
+                      <SegmentedControl
+                        options={[
+                          { value: 'simplified' as const, label: `Tối giản · ${transfers.length}` },
+                          {
+                            value: 'direct' as const,
+                            label: direct.data
+                              ? `Trả trực tiếp · ${directDebts.length}`
+                              : 'Trả trực tiếp',
+                          },
+                        ]}
+                        value={settleMode}
+                        onChange={setSettleMode}
+                        accessibilityLabel="Cách chuyển tiền"
+                      />
+                      <Text className="mb-1 mt-2 text-xs leading-5 text-muted-foreground">
+                        {settleMode === 'simplified'
+                          ? `Ít lần chuyển nhất (${transfers.length} lần cho ${data.balances.filter((balance) => balance.net.minor !== 0).length} người còn nợ/được nhận). Có thể chuyển cho người mình không chi chung — tổng mỗi người trả/nhận vẫn đúng từng đồng.`
+                          : 'Ai nợ ai trả nấy theo từng khoản, đã bù trừ hai chiều. Nhiều lần chuyển hơn nhưng dễ đối chiếu.'}{' '}
+                        Chạm một dòng để xem vì sao.
                       </Text>
-                      {transfers.map((transfer, index) => {
-                        const receiver = memberOf(transfer.to);
-                        return (
-                          <Pressable
-                            key={`${transfer.from}-${transfer.to}-${index}`}
-                            accessibilityRole="button"
-                            accessibilityLabel={`${nameOf(transfer.from)} chuyển ${formatMoney(transfer.amount)} cho ${nameOf(transfer.to)}. Xem mã QR`}
-                            onPress={() =>
-                              setPayment({
-                                fromName: nameOf(transfer.from),
-                                toName: nameOf(transfer.to),
-                                toUserId: receiver?.userId ?? null,
-                                toAvatarUrl: receiver?.avatarUrl ?? null,
-                                amount: transfer.amount,
-                              })
-                            }
-                            className="-mx-2 flex-row items-center gap-3 rounded-xl px-2 py-2.5 active:bg-muted">
-                            <Avatar
-                              name={nameOf(transfer.to)}
-                              uri={receiver?.avatarUrl}
-                              size="sm"
-                              pending={!receiver?.claimed}
-                            />
-                            <View className="min-w-0 flex-1">
-                              <Text numberOfLines={2} className="text-base text-foreground">
-                                {nameOf(transfer.from)} → {nameOf(transfer.to)}
-                              </Text>
-                            </View>
-                            <Text
-                              numberOfLines={1}
-                              className="text-base font-semibold text-foreground">
-                              {formatMoney(transfer.amount)}
-                            </Text>
-                            <QrCode size={18} className="text-muted-foreground" />
-                          </Pressable>
-                        );
-                      })}
+                      {settleMode === 'direct' && direct.loading && direct.data === null ? (
+                        <LoadingView label="Đang tính nợ trực tiếp…" />
+                      ) : null}
+                      {settleMode === 'direct' && direct.error ? (
+                        <ErrorView message={direct.error} onRetry={direct.reload} />
+                      ) : null}
+                      {shownTransfers.map((transfer) => (
+                        <TransferRow
+                          key={`${settleMode}-${transfer.from}-${transfer.to}`}
+                          from={personOf(transfer.from)}
+                          to={personOf(transfer.to)}
+                          amount={transfer.amount}
+                          onPress={() => openBalanceDetail(transfer.from, transfer.to)}
+                        />
+                      ))}
+                      <Pressable
+                        accessibilityRole="button"
+                        onPress={() => openBalanceDetail()}
+                        className="mt-2 min-h-11 flex-row items-center justify-center gap-2 rounded-xl bg-muted/60 active:bg-muted">
+                        <Info size={16} className="text-primary" />
+                        <Text className="text-sm font-medium text-foreground">
+                          Xem cách tính: khoản nào bù trừ khoản nào
+                        </Text>
+                      </Pressable>
                     </View>
                   ) : null}
                 </>
@@ -450,7 +586,10 @@ export default function TripScreen() {
                   được âm thầm đổi số dư của cả nhóm. */}
               <Pressable
                 accessibilityRole="checkbox"
-                accessibilityState={{ checked: expense.settledAt !== null, busy: settlingId === expense.id }}
+                accessibilityState={{
+                  checked: expense.settledAt !== null,
+                  busy: settlingId === expense.id,
+                }}
                 accessibilityLabel={`Đánh dấu ${expense.description} đã xong`}
                 disabled={settlingId !== null}
                 onPress={() => void toggleSettled(expense)}
@@ -495,8 +634,6 @@ export default function TripScreen() {
           </View>
         )}
       />
-
-      <PaymentSheet target={payment} guest={isGuest} onClose={() => setPayment(null)} />
     </View>
   );
 }
