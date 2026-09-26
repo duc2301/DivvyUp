@@ -28,7 +28,7 @@ export interface PlacePhoto {
   /** Tên tác giả hoặc nguồn — Unsplash BẮT BUỘC hiển thị. */
   readonly credit: string;
   readonly link: string;
-  readonly provider: 'pinterest' | 'unsplash';
+  readonly provider: 'pinterest' | 'unsplash' | 'wikimedia';
 }
 
 /**
@@ -84,7 +84,16 @@ export async function searchPlaces(query: string, limit = 6): Promise<PlaceResul
 
 export async function fetchPlacePhotos(
   query: string,
-  options: { limit?: number; countryCode?: string; fallback?: string } = {},
+  options: {
+    limit?: number;
+    countryCode?: string;
+    fallback?: string;
+    /** Riêng tên địa danh — máy chủ dùng để loại ảnh không nhắc tới nơi này. */
+    name?: string;
+    /** Toạ độ — máy chủ tìm thêm ảnh chụp tại chỗ (Wikimedia Commons). */
+    latitude?: number;
+    longitude?: number;
+  } = {},
 ): Promise<PlacePhoto[]> {
   const trimmed = query.trim();
   if (trimmed.length < 2) return [];
@@ -98,6 +107,9 @@ export async function fetchPlacePhotos(
       // Từ khoá rút gọn dùng khi từ khoá đầy đủ không ra ảnh nào — thường là
       // tên địa điểm bỏ phần tên nước.
       fallback: options.fallback ?? '',
+      name: options.name ?? options.fallback ?? '',
+      latitude: options.latitude,
+      longitude: options.longitude,
       limit: options.limit ?? 30,
       countryCode: options.countryCode ?? 'VN',
     },
