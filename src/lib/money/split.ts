@@ -204,7 +204,8 @@ export function splitExpense(request: SplitRequest): SplitResult {
       bpsTotal += value;
     }
     if (bpsTotal !== PERCENT_SCALE) {
-      const percent = (bpsTotal / 100).toFixed(2).replace(/\.?0+$/, '');
+      // Number(...) bỏ số 0 thừa ("90.00" → 90, "0.50" → 0.5) mà không cần regex.
+      const percent = String(Number((bpsTotal / 100).toFixed(2)));
       return fail(`Tổng tỷ lệ đang là ${percent}%, phải đúng 100%.`);
     }
 

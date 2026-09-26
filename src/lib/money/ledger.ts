@@ -64,6 +64,16 @@ export interface MemberStatement {
   readonly net: Money;
 }
 
+/**
+ * So id theo code unit: tất định và không phụ thuộc locale. KHÔNG dùng
+ * localeCompare — kết quả đổi theo ngôn ngữ máy, và Hermes trên Android có ICU
+ * rút gọn (cùng lý do với formatMoney). Id ở đây là UUID ASCII.
+ */
+function compareIds(a: string, b: string): number {
+  if (a < b) return -1;
+  return a > b ? 1 : 0;
+}
+
 function assertCurrency(amount: Money, currency: CurrencyCode, where: string): void {
   if (amount.currency !== currency) {
     throw new MoneyError(`${where} dùng ${amount.currency} nhưng chuyến đi tính bằng ${currency}.`);
@@ -103,7 +113,7 @@ export function buildStatements(
   participantIds: readonly string[] = [],
 ): MemberStatement[] {
   const active = activeExpenses(expenses, currency).sort(
-    (a, b) => a.paidAt.localeCompare(b.paidAt) || a.id.localeCompare(b.id),
+    (a, b) => compareIds(a.paidAt, b.paidAt) || compareIds(a.id, b.id),
   );
 
   const ids = new Set(participantIds);
@@ -116,7 +126,7 @@ export function buildStatements(
     ids.add(settlement.toId);
   }
 
-  return [...ids].sort().map((id) => {
+  return [...ids].sort(compareIds).map((id) => {
     const lines: StatementLine[] = [];
     let paidTotal = 0;
     let owedTotal = 0;
@@ -214,7 +224,7 @@ function cancelCycles(edges: Map<string, Map<string, number>>): Map<string, numb
     const visit = (node: string): string[] | null => {
       state.set(node, 1);
       stack.push(node);
-      const next = [...(edges.get(node)?.keys() ?? [])].sort();
+      const next = [...(edges.get(node)?.keys() ?? [])].sort(compareIds);
       for (const to of next) {
         const mark = state.get(to);
         if (mark === 1) return stack.slice(stack.indexOf(to));
@@ -227,7 +237,7 @@ function cancelCycles(edges: Map<string, Map<string, number>>): Map<string, numb
       state.set(node, 2);
       return null;
     };
-    for (const node of [...edges.keys()].sort()) {
+    for (const node of [...edges.keys()].sort(compareIds)) {
       if (state.has(node)) continue;
       const found = visit(node);
       if (found) return found;
@@ -309,7 +319,7 @@ export function pairwiseDebts(
   const netted: Netted[] = [];
   const seen = new Set<string>();
   for (const entry of gross.values()) {
-    const pair = [entry.debtor, entry.creditor].sort().join(PAIR_SEPARATOR);
+    const pair = [entry.debtor, entry.creditor].sort(compareIds).join(PAIR_SEPARATOR);
     if (seen.has(pair)) continue;
     seen.add(pair);
 
@@ -359,6 +369,6 @@ export function pairwiseDebts(
 
   return debts.sort(
     (a, b) =>
-      b.amount.minor - a.amount.minor || a.from.localeCompare(b.from) || a.to.localeCompare(b.to),
+      b.amount.minor - a.amount.minor || compareIds(a.from, b.from) || compareIds(a.to, b.to),
   );
 }

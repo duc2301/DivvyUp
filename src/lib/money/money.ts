@@ -245,6 +245,19 @@ export interface FormatOptions {
  * Tự cài đặt thay vì dùng Intl.NumberFormat vì Hermes trên Android
  * có bản ICU rút gọn, kết quả không giống nhau giữa các nền tảng.
  */
+/**
+ * Chèn dấu phân cách hàng nghìn, cắt từ phải sang từng nhóm 3 chữ số. Vòng lặp
+ * tuyến tính thay cho regex lookahead lồng (backtracking siêu tuyến tính).
+ */
+function groupThousands(digits: string, separator: string): string {
+  let out = '';
+  for (let end = digits.length; end > 0; end -= 3) {
+    const chunk = digits.slice(Math.max(0, end - 3), end);
+    out = out === '' ? chunk : chunk + separator + out;
+  }
+  return out;
+}
+
 export function formatMoney(amount: Money, options: FormatOptions = {}): string {
   const { withSymbol = true, signDisplay = 'auto' } = options;
   const info = currencyInfo(amount.currency);
@@ -255,7 +268,7 @@ export function formatMoney(amount: Money, options: FormatOptions = {}): string 
   const integerDigits = digits.slice(0, cut);
   const fractionDigits = digits.slice(cut);
 
-  const grouped = integerDigits.replace(/\B(?=(\d{3})+(?!\d))/g, info.groupSeparator);
+  const grouped = groupThousands(integerDigits, info.groupSeparator);
   let body = info.decimals > 0 ? grouped + info.decimalSeparator + fractionDigits : grouped;
 
   if (withSymbol) {
