@@ -1,7 +1,7 @@
 {
   "name": "divvyup",
   "main": "expo-router/entry",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "dependencies": {
     "@eva-design/eva": "^2.2.0",
     "@expo-google-fonts/be-vietnam-pro": "^0.4.1",
