@@ -10,6 +10,9 @@
  */
 /** @type {import('expo/fingerprint').Config} */
 const config = {
-  sourceSkips: ['ExpoConfigVersions'],
+  // Giữ mục mặc định (prebuild trên EAS đổi scripts.android/ios thành expo run:*)
+  // — khai sourceSkips là THAY THẾ mặc định, thiếu mục này thì runtime tính ở CI
+  // và trên EAS lệch nhau, build hỏng ở pha Configure expo-updates.
+  sourceSkips: ['ExpoConfigVersions', 'PackageJsonAndroidAndIosScriptsIfNotContainRun'],
 };
 module.exports = config;
