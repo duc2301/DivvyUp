@@ -7,7 +7,13 @@
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git branch:*)",
       "Bash(npm run lint:*)",
+      "Bash(npm run typecheck:*)",
+      "Bash(npm test:*)",
+      "Bash(npm run test:*)",
+      "Bash(npm run build:*)",
       "Bash(npx tsc --noEmit)"
     ],
     "deny": [
@@ -17,7 +23,26 @@
       "Bash(gradlew:*)",
       "Bash(npx expo prebuild:*)",
       "Read(./.env)",
-      "Read(./.env.*)"
+      "Read(./.env.*)",
+      "Read(./web/.env)",
+      "Read(./web/.env.local)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh -c 'in=$(cat); echo \"$in\" | grep -q \"git commit\" || exit 0; echo \"$in\" | grep -q \"INVARIANT_REVIEWED=1\" && exit 0; git diff --cached --name-only 2>/dev/null | grep -qE \"^(src/lib/(money|data|storage)/|supabase/|web/src/shared/api/)\" || exit 0; echo \"[DivvyUp] Diff đang staged đụng lõi tiền, tầng dữ liệu hoặc Supabase. Chạy agent invariant-guard (và audit-money nếu đụng src/lib/money) TRƯỚC khi commit — xem AGENTS.md mục 7. Nếu đã soát và kết luận ĐẠT, hoặc CẢNH BÁO đã được người dùng chấp nhận, nói rõ điều đó với người dùng rồi commit lại với tiền tố INVARIANT_REVIEWED=1 (ví dụ: INVARIANT_REVIEWED=1 git commit ...).\" >&2; exit 2'"
+          },
+          {
+            "type": "command",
+            "command": "sh -c 'in=$(cat); echo \"$in\" | grep -qE \"git push[^|;&]*(main|origin +HEAD|--all)\" || exit 0; echo \"$in\" | grep -q \"PUSH_APPROVED=1\" && exit 0; echo \"[DivvyUp] Push lên main sẽ TỰ PHÁT HÀNH OTA tới máy người dùng. Chỉ push khi người dùng yêu cầu rõ, và migration Supabase mới (nếu có) đã được chạy TRƯỚC. Người dùng đã đồng ý rõ ràng thì push lại với tiền tố PUSH_APPROVED=1. Xem skill divvyup-release.\" >&2; exit 2'"
+          }
+        ]
+      }
     ]
   }
 }
