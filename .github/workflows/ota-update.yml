@@ -37,6 +37,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -44,14 +46,20 @@ jobs:
           node-version: 22
           cache: npm
 
-      - name: Setup EAS CLI
-        uses: expo/expo-github-action@v8
-        with:
-          eas-version: latest
-          token: ${{ secrets.EXPO_TOKEN }}
-
+      # --ignore-scripts: không chạy script cài đặt của dependency (chỉ fsevents
+      # — gói riêng macOS — có script). Package bị chiếm quyền không chạy được gì
+      # trên runner, nhất là ở job có token.
+      # Cài TRƯỚC khi nạp EXPO_TOKEN vào môi trường: token đẩy được OTA tới mọi máy.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
+
+      - name: Setup EAS CLI
+        uses: expo/expo-github-action@c7b66a9c327a43a8fa7c0158e7f30d6040d2481e # v8.2.1
+        with:
+          # Ghim bản cụ thể: được cài trong job có EXPO_TOKEN — không để một bản
+          # "latest" bị chiếm quyền đọc được token. Nâng bản có chủ đích.
+          eas-version: 24.8.0
+          token: ${{ secrets.EXPO_TOKEN }}
 
       - name: Load app env from eas.json (profile preview)
         run: |

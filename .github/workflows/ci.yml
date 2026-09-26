@@ -27,6 +27,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v5
+        with:
+          persist-credentials: false
 
       - name: Setup Node.js
         uses: actions/setup-node@v5
@@ -37,8 +39,11 @@ jobs:
       # `npm ci` thay cho `npm install`: cài đúng theo package-lock.json và báo
       # lỗi nếu lock lệch package.json. Máy chủ EAS Build cũng chạy `npm ci`, nên
       # CI qua được thì build trên EAS cũng cài được.
+      # --ignore-scripts: không chạy script cài đặt của dependency (chỉ fsevents
+      # — gói riêng macOS — có script). Package bị chiếm quyền không chạy được gì
+      # trên runner, nhất là ở job có token.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Typecheck
         run: npm run typecheck

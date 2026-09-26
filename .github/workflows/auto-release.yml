@@ -34,8 +34,9 @@ on:
         type: boolean
         default: false
 
+# Quyền ghi chỉ cấp cho job cần (gắn tag, tạo Release, đính APK).
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: auto-release
@@ -54,6 +55,8 @@ jobs:
     needs: verify
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     timeout-minutes: 20
     outputs:
       tag: ${{ steps.decide.outputs.tag }}
@@ -74,8 +77,11 @@ jobs:
           node-version: 22
           cache: npm
 
+      # --ignore-scripts: không chạy script cài đặt của dependency (chỉ fsevents
+      # — gói riêng macOS — có script). Package bị chiếm quyền không chạy được gì
+      # trên runner, nhất là ở job có token.
       - name: Install dependencies
-        run: npm ci
+        run: npm ci --ignore-scripts
 
       - name: Plan version (theo commit)
         id: plan
@@ -93,7 +99,7 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PREVIOUS: ${{ steps.plan.outputs.previous }}
         run: |
-          runtime=$(npx expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion')
+          runtime=$(npx --no-install expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion')
           if [ -z "$runtime" ] || [ "$runtime" = "null" ]; then
             echo "::error::Không tính được runtime fingerprint"
             exit 1
@@ -210,6 +216,8 @@ jobs:
     needs: release
     if: needs.release.outputs.tag != '' && needs.release.outputs.needs_apk == 'true'
     uses: ./.github/workflows/build-apk-release.yml
+    permissions:
+      contents: write
     with:
       tag: ${{ needs.release.outputs.tag }}
     # Chỉ truyền đúng secret workflow build cần, không `inherit` toàn bộ.
