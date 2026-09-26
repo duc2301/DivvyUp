@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="description" content="DivvyUp — chia tiền nhóm, chuyến đi rõ ràng từng đồng." />
+    <meta name="theme-color" content="#0D9488" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="DivvyUp" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/png" href="/favicon.png" />
+    <link rel="apple-touch-icon" href="/icon.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      rel="stylesheet"
+      href="https://fonts.googleapis.com/css2?family=Be+Vietnam+Pro:wght@400;500;600;700&display=swap"
+    />
+    <title>DivvyUp</title>
+    <!-- Gắn class 'dark' TRƯỚC khi vẽ để không nháy trắng khi người dùng chọn tối.
+         Khoá phải khớp THEME_STORAGE_KEY trong src/shared/lib/theme. -->
+    <!-- Gắn class dark trước khi vẽ (tránh chớp trắng). File tĩnh chứ không
+         inline: CSP chỉ cho script-src 'self'. -->
+    <script src="/theme-init.js"></script>
+  </head>
+  <body class="bg-background font-sans text-foreground antialiased">
+    <div id="root"></div>
+    <script type="module" src="/src/app/main.tsx"></script>
+  </body>
+</html>

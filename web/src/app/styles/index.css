@@ -1,0 +1,118 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Token màu CHÉP NGUYÊN GIÁ TRỊ từ src/global.css của app mobile — hai bản phải
+  trông như một. Đổi màu thì đổi ở global.css trước rồi chép lại đây.
+
+  Giá trị dạng "H S% L%" để tailwind.config.js ghép thành hsl(var(--x) / <alpha>).
+  Không viết mã màu ở component: mọi màu đi qua các biến dưới đây.
+*/
+@layer base {
+  :root {
+    --background: 0 0% 100%;
+    --foreground: 222 47% 11%;
+
+    --card: 0 0% 100%;
+    --card-foreground: 222 47% 11%;
+
+    --muted: 210 40% 96%;
+    --muted-foreground: 215 16% 47%;
+
+    --border: 214 32% 91%;
+    --input: 210 40% 96%;
+
+    --primary: 175 84% 32%;
+    --primary-foreground: 0 0% 100%;
+
+    --accent: 172 66% 50%;
+    --accent-foreground: 222 47% 11%;
+    --accent-strong: 175 84% 30%;
+
+    --positive: 175 84% 30%;
+    --negative: 350 89% 52%;
+
+    --sun: 38 92% 50%;
+    --rain: 205 90% 45%;
+
+    /* Riêng bản web: lớp phủ trên ảnh bìa và chữ đặt trên ảnh. Mobile dùng
+       bg-black/45 và text-white cho đúng hai việc này; ở đây đặt tên thành
+       token để không có mã màu nào nằm ngoài bảng biến. Giống nhau ở hai theme
+       vì ảnh không đổi theo theme. */
+    --scrim: 0 0% 0%;
+    --on-image: 0 0% 100%;
+
+    color-scheme: light;
+  }
+
+  /* Mobile viết .dark:root; web gắn class 'dark' lên <html> (ThemeProvider). */
+  html.dark {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+
+    --muted: 215 28% 25%;
+    --muted-foreground: 215 20% 65%;
+
+    --border: 215 28% 25%;
+    --input: 215 28% 25%;
+
+    --primary: 172 66% 50%;
+    --primary-foreground: 222 47% 11%;
+
+    --accent: 172 66% 50%;
+    --accent-foreground: 222 47% 11%;
+    --accent-strong: 172 66% 62%;
+
+    --positive: 172 66% 55%;
+    --negative: 350 89% 68%;
+
+    --sun: 43 96% 58%;
+    --rain: 199 89% 62%;
+
+    color-scheme: dark;
+  }
+
+  html {
+    -webkit-text-size-adjust: 100%;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  body {
+    min-height: 100dvh;
+  }
+
+  /* iOS phóng to trang khi ô nhập có cỡ chữ dưới 16px — giữ tối thiểu 16px. */
+  input,
+  textarea,
+  select {
+    font-size: max(16px, 1em);
+  }
+
+  :focus-visible {
+    outline: 2px solid hsl(var(--primary));
+    outline-offset: 2px;
+  }
+}
+
+@layer utilities {
+  .pt-safe {
+    padding-top: env(safe-area-inset-top);
+  }
+  .pb-safe {
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .px-safe {
+    padding-left: env(safe-area-inset-left);
+    padding-right: env(safe-area-inset-right);
+  }
+  .scrollbar-none {
+    scrollbar-width: none;
+  }
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+}

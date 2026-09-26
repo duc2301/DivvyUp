@@ -1,0 +1,16 @@
+{
+  "name": "DivvyUp",
+  "short_name": "DivvyUp",
+  "description": "Chia tiền nhóm, chuyến đi rõ ràng từng đồng.",
+  "lang": "vi",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FFFFFF",
+  "theme_color": "#0D9488",
+  "icons": [
+    { "src": "/icon.png", "sizes": "1024x1024", "type": "image/png", "purpose": "any" },
+    { "src": "/favicon.png", "sizes": "64x64", "type": "image/png" }
+  ]
+}

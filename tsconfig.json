@@ -22,12 +22,14 @@
     "expo-env.d.ts",
     "nativewind-env.d.ts"
   ],
+  // web/ là bản web (Vite) có tsconfig riêng: kiểm bằng `cd web && npm run typecheck`.
   // Edge Function chạy trên Deno với API và kiểu hoàn toàn khác React Native.
   // Để tsc của app kiểm chúng thì lúc nào cũng báo "Cannot find name 'Deno'".
   // Chúng được kiểm riêng bằng: npx supabase functions serve
   "exclude": [
     "node_modules",
     "supabase/functions",
+    "web",
     "babel.config.js",
     "metro.config.js",
     "android",
