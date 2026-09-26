@@ -173,8 +173,9 @@ const output = flag('--json') ? `${JSON.stringify(report, null, 2)}\n` : renderR
 const outFile = option('--out');
 if (outFile) {
   writeFileSync(outFile, output);
-  // Không in lại đường dẫn lấy từ tham số dòng lệnh vào log (log injection).
-  console.log(`Đã ghi báo cáo — ${report.issues.length} issue, Quality Gate ${gate?.status ?? '?'}.`);
+  // Câu cố định: không đưa đường dẫn từ tham số hay dữ liệu API vào log (log
+  // injection). Kết quả nằm trong file vừa ghi.
+  console.log('Đã ghi báo cáo.');
 } else {
   process.stdout.write(output);
 }
