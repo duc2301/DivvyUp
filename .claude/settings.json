@@ -14,7 +14,9 @@
       "Bash(npm test:*)",
       "Bash(npm run test:*)",
       "Bash(npm run build:*)",
-      "Bash(npx tsc --noEmit)"
+      "Bash(npx tsc --noEmit)",
+      "Bash(npm run release:plan:*)",
+      "Bash(node scripts/sonar/fetch-report.mjs:*)"
     ],
     "deny": [
       "Bash(eas build:*)",

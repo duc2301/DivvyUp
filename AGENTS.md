@@ -93,6 +93,7 @@ Hai luật chống trôi:
 | `npm run lint` | ESLint |
 | `npm run typecheck` | Kiểm tra type (`tsc --noEmit`) |
 | `npm test` | Chạy test (`node --test`) — logic tiền tệ ở mục 3 phải có test trước tiên |
+| `node scripts/sonar/fetch-report.mjs` | Báo cáo SonarQube Cloud (`--new` chỉ mã mới, `--pr <số>`, `--json --out <file>`); dự án riêng tư cần biến `SONAR_TOKEN` |
 | `npm run release:plan` | Xem trước bản phát hành kế tiếp: số phiên bản, mức tăng, ghi chú (không ghi gì) |
 | `cd web && npm run dev` | Dev server web (Vite, `http://localhost:5173`) |
 | `cd web && npm run build` | Build web → `web/dist/` |
@@ -126,10 +127,11 @@ Quy trình trọn vòng một tính năng nằm ở skill **`feature-pipeline`**
 | `performance-reviewer` | truy vấn, danh sách, ảnh, thuật toán, bundle | không |
 | `silent-failure` | lỗi bị nuốt im lặng | không |
 | `test-coverage-reviewer` | bộ test đủ và khách quan chưa | không |
+| `sonar-triage` | đọc SonarQube Cloud, xét từng issue trên code thật, phân loại và lập kế hoạch bảo trì | không |
 | `change-audit-log` | nhật ký thay đổi + việc tay khi phát hành | không |
 | `docs-updater` | cập nhật tài liệu sau khi xong | **có** (chỉ tài liệu) |
 
-Skill: `feature-pipeline`, `git-commit`, `divvyup-release`, `divvyup-apk-release` (phát hành tự động: tự tăng số theo commit, gắn tag, tạo Release, build APK khi native đổi), `supabase-schema`. Lệnh `/audit` chạy nhanh bộ `audit-*` trên diff hiện tại.
+Skill: `feature-pipeline`, `git-commit`, `divvyup-release`, `sonar-maintain` (bảo trì theo SonarQube Cloud: đọc → phân loại → sửa theo đợt → kiểm lại Quality Gate), `divvyup-apk-release` (phát hành tự động: tự tăng số theo commit, gắn tag, tạo Release, build APK khi native đổi), `supabase-schema`. Lệnh `/audit` chạy nhanh bộ `audit-*` trên diff hiện tại.
 
 Hook trong `.claude/settings.json` chặn `git commit` khi diff đã stage đụng lõi tiền/tầng dữ liệu/Supabase cho tới khi `invariant-guard` đã soát, và chặn `git push` lên `main` (push `main` = OTA tự phát hành).
 

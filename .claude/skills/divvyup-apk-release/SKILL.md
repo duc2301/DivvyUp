@@ -38,7 +38,7 @@ In ra tag trước, số commit mới, mức tăng, số kế tiếp và ghi ch�
 
 ## Bước 2 — Có cần APK mới không?
 
-Cần APK khi runtime fingerprint đổi. Fingerprint gồm: module native trong `package.json`, plugin và cấu hình trong `app.json` (trừ `version`), `eas.json`, `.gitignore`, `fingerprint.config.js`, icon/splash. Xem chính xác:
+Cần APK khi runtime fingerprint đổi. Fingerprint gồm: module native **và mục `scripts`** trong `package.json` (thêm/sửa một npm script cũng là build APK mới — công cụ nội bộ nên gọi thẳng bằng `node scripts/...`), plugin và cấu hình trong `app.json` (trừ `version`), `eas.json`, `.gitignore`, `fingerprint.config.js`, icon/splash. Xem chính xác:
 
 ```bash
 npx expo-updates runtimeversion:resolve --platform android
