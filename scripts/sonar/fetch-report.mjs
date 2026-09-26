@@ -28,7 +28,14 @@ const option = (name, fallback = null) => {
   return index === -1 ? fallback : args[index + 1] ?? fallback;
 };
 
-const host = (process.env.SONAR_HOST_URL ?? 'https://sonarcloud.io').replace(/\/+$/, '');
+/** Bỏ dấu "/" cuối URL — vòng lặp thay regex `\/+$` (Sonar S8786). */
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value[end - 1] === '/') end -= 1;
+  return value.slice(0, end);
+}
+
+const host = trimTrailingSlashes(process.env.SONAR_HOST_URL ?? 'https://sonarcloud.io');
 const projectKey = option('--project', process.env.SONAR_PROJECT_KEY ?? 'duc2301_DivvyUp');
 const branch = option('--branch');
 const pullRequest = option('--pr');
@@ -166,7 +173,8 @@ const output = flag('--json') ? `${JSON.stringify(report, null, 2)}\n` : renderR
 const outFile = option('--out');
 if (outFile) {
   writeFileSync(outFile, output);
-  console.log(`Đã ghi ${outFile} — ${report.issues.length} issue, Quality Gate ${gate?.status ?? '?'}.`);
+  // Không in lại đường dẫn lấy từ tham số dòng lệnh vào log (log injection).
+  console.log(`Đã ghi báo cáo — ${report.issues.length} issue, Quality Gate ${gate?.status ?? '?'}.`);
 } else {
   process.stdout.write(output);
 }

@@ -110,7 +110,7 @@ export function countBy(items, pick) {
 export function sanitize(text, max = 240) {
   let clean = '';
   for (const char of String(text)) {
-    const code = char.charCodeAt(0);
+    const code = char.codePointAt(0) ?? 0;
     clean += code < 32 || code === 127 ? ' ' : char;
   }
   clean = clean.replace(/\s+/g, ' ').trim();
