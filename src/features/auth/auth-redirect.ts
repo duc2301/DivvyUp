@@ -71,5 +71,8 @@ export function describeRedirectError(redirect: AuthRedirect): string {
   if (redirect.errorCode === 'access_denied') {
     return 'Link không còn hợp lệ. Hãy yêu cầu gửi lại email mới.';
   }
-  return redirect.errorDescription ?? 'Link không hợp lệ. Hãy yêu cầu gửi lại email mới.';
+  // KHÔNG hiện error_description: nó nằm nguyên văn trên URL, ai cũng soạn được
+  // ("Tài khoản bị khoá, chuyển 50.000đ tới STK… để mở") và sẽ hiện trong khung
+  // lỗi ngay trên domain thật của app. Chỉ dùng câu có sẵn theo mã lỗi.
+  return 'Link không hợp lệ. Hãy yêu cầu gửi lại email mới.';
 }
