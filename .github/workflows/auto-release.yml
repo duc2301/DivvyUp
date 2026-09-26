@@ -1,0 +1,217 @@
+# Tự phát hành: mỗi lần push lên main, tự quyết định số phiên bản kế tiếp,
+# gắn tag, tạo GitHub Release, và chỉ build APK khi phần native thật sự đổi.
+#
+#   1. Đọc tag vX.Y.Z trước và các commit từ đó (scripts/release/prepare.mjs,
+#      luật trong scripts/release/semver.mjs): feat → số giữa, fix/khác → số cuối,
+#      "!"/BREAKING CHANGE → số đầu, chỉ docs/ci/test/chore → không phát hành.
+#   2. So runtime fingerprint với bản trước (dấu ở cuối ghi chú phát hành):
+#        - đổi → PHẢI có APK mới: build APK; kể cả khi commit chỉ là chore/build
+#          (ép lên patch), vì OTA của runtime mới không tới được APK cũ;
+#        - không đổi và bản trước có APK → gắn lại APK đó (cài vào tự nhận OTA mới
+#          nhất), không tốn một lượt build EAS; bản trước không có APK → build.
+#      `version` KHÔNG nằm trong fingerprint (fingerprint.config.js), nên tăng số
+#      không làm OTA mất đường tới máy đang cài APK cũ.
+#   3. Ghi version vào app.json + package.json, commit "chore(release): vX [skip ci]"
+#      ([skip ci] để không kích lại chính workflow này và OTA), gắn tag, tạo Release.
+#
+# Release tạo bằng GITHUB_TOKEN không kích hoạt workflow khác (luật của GitHub),
+# nên bước build APK gọi thẳng build-apk-release.yml qua workflow_call.
+name: Auto release
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      bump:
+        description: Mức tăng phiên bản
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+      force_apk:
+        description: Luôn build APK mới (kể cả khi phần native không đổi)
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: auto-release
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # Chỉ phát hành từ main: chạy tay trên nhánh khác sẽ đẩy code chưa review lên
+    # main. Commit phát hành do chính workflow tạo đã có [skip ci]; điều kiện
+    # startsWith là lớp chặn thứ hai chống vòng lặp.
+    if: ${{ github.ref == 'refs/heads/main' && !startsWith(github.event.head_commit.message, 'chore(release)') }}
+    uses: ./.github/workflows/ci.yml
+
+  release:
+    name: Tag + GitHub Release
+    needs: verify
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    outputs:
+      tag: ${{ steps.decide.outputs.tag }}
+      needs_apk: ${{ steps.decide.outputs.needs_apk }}
+    steps:
+      - name: Checkout (đủ lịch sử và tag)
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          # Không để token có quyền ghi nằm sẵn trong .git/config trong lúc
+          # `npm ci` chạy script của dependency. Chỉ cấp ở bước push.
+          persist-credentials: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Plan version (theo commit)
+        id: plan
+        env:
+          BUMP: ${{ github.event.inputs.bump || 'auto' }}
+        run: |
+          node scripts/release/prepare.mjs --bump "$BUMP" --json > plan.json
+          cat plan.json
+          echo "tag=$(jq -r '.tag // empty' plan.json)" >> "$GITHUB_OUTPUT"
+          echo "previous=$(jq -r '.previousTag // empty' plan.json)" >> "$GITHUB_OUTPUT"
+
+      - name: Compare runtime with previous release
+        id: runtime
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PREVIOUS: ${{ steps.plan.outputs.previous }}
+        run: |
+          runtime=$(npx expo-updates runtimeversion:resolve --platform android | jq -r '.runtimeVersion')
+          if [ -z "$runtime" ] || [ "$runtime" = "null" ]; then
+            echo "::error::Không tính được runtime fingerprint"
+            exit 1
+          fi
+          echo "runtime=$runtime" >> "$GITHUB_OUTPUT"
+
+          previous_runtime=""
+          previous_has_apk=false
+          if [ -n "$PREVIOUS" ]; then
+            previous_runtime=$(gh release view "$PREVIOUS" --json body -q .body 2>/dev/null \
+              | node --input-type=module -e "import { readRuntimeMarker } from './scripts/release/semver.mjs'; let s=''; process.stdin.on('data', d => s += d).on('end', () => console.log(readRuntimeMarker(s) ?? ''));")
+            if gh release view "$PREVIOUS" --json assets -q '.assets[].name' 2>/dev/null | grep -q '\.apk$'; then
+              previous_has_apk=true
+            fi
+          fi
+          native_changed=true
+          if [ -n "$previous_runtime" ] && [ "$previous_runtime" = "$runtime" ]; then
+            native_changed=false
+          fi
+          echo "Runtime bản trước: ${previous_runtime:-không rõ} (có APK: $previous_has_apk) — bản này: $runtime"
+          echo "native_changed=$native_changed" >> "$GITHUB_OUTPUT"
+          echo "previous_has_apk=$previous_has_apk" >> "$GITHUB_OUTPUT"
+
+      - name: Decide release and APK
+        id: decide
+        env:
+          PLANNED_TAG: ${{ steps.plan.outputs.tag }}
+          NATIVE_CHANGED: ${{ steps.runtime.outputs.native_changed }}
+          PREVIOUS_HAS_APK: ${{ steps.runtime.outputs.previous_has_apk }}
+          FORCE_APK: ${{ github.event.inputs.force_apk || 'false' }}
+        run: |
+          tag="$PLANNED_TAG"
+          bump=$(jq -r '.bump' plan.json)
+          if [ -z "$tag" ] && [ "$NATIVE_CHANGED" = "true" ]; then
+            # Native đổi mà commit chỉ là chore/build: vẫn phải phát hành một APK,
+            # nếu không bản OTA của runtime mới không tới được máy nào.
+            bump=patch
+            node scripts/release/prepare.mjs --bump patch --json > plan.json
+            tag=$(jq -r '.tag // empty' plan.json)
+            echo "::notice::Phần native đổi — phát hành $tag dù commit chỉ là việc nội bộ."
+          fi
+          if [ -z "$tag" ]; then
+            echo "::notice::Chỉ có thay đổi nội bộ (docs/ci/test/chore), native không đổi — không phát hành."
+          fi
+          needs_apk=false
+          if [ "$FORCE_APK" = "true" ] || [ "$NATIVE_CHANGED" = "true" ] || [ "$PREVIOUS_HAS_APK" != "true" ]; then
+            needs_apk=true
+          fi
+          echo "tag=$tag" >> "$GITHUB_OUTPUT"
+          echo "bump=$bump" >> "$GITHUB_OUTPUT"
+          echo "needs_apk=$needs_apk" >> "$GITHUB_OUTPUT"
+
+      - name: Commit version, tag, push
+        if: steps.decide.outputs.tag != ''
+        env:
+          TAG: ${{ steps.decide.outputs.tag }}
+          BUMP: ${{ steps.decide.outputs.bump }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          node scripts/release/prepare.mjs --bump "$BUMP" --write
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add app.json package.json
+          if ! git diff --cached --quiet; then
+            git commit -m "chore(release): $TAG [skip ci]"
+          fi
+          git tag -a "$TAG" -m "DivvyUp $TAG"
+          remote="https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          # Không --force: có commit mới chen vào main thì push bị từ chối, chạy lại.
+          git push "$remote" HEAD:refs/heads/main
+          git push "$remote" "refs/tags/$TAG"
+
+      - name: Create GitHub Release
+        if: steps.decide.outputs.tag != ''
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          RUNTIME: ${{ steps.runtime.outputs.runtime }}
+          NEEDS_APK: ${{ steps.decide.outputs.needs_apk }}
+        run: |
+          {
+            notes=$(jq -r '.notes' plan.json)
+            if [ -n "$notes" ]; then echo "$notes"; else echo "Cải thiện nhỏ và sửa lỗi."; fi
+            echo
+            echo "### Cài đặt"
+            if [ "$NEEDS_APK" = "true" ]; then
+              echo "Tải file \`DivvyUp-$TAG.apk\` bên dưới và cài đè lên bản cũ (dữ liệu giữ nguyên). File xuất hiện sau khi build xong, khoảng 15–30 phút."
+            else
+              echo "Bản này không đổi phần cài đặt. Đang dùng app thì chỉ cần mở lại — app tự cập nhật. Cài mới thì dùng file APK đính kèm, mở app lần đầu sẽ tự lên bản mới nhất."
+            fi
+            echo
+            echo "Dùng iPhone: mở https://divvyup.vn trên Safari."
+            echo
+            # Dấu runtime LUÔN ở cuối — readRuntimeMarker lấy dấu cuối cùng.
+            node --input-type=module -e "import { runtimeMarker } from './scripts/release/semver.mjs'; console.log(runtimeMarker(process.env.RUNTIME));"
+          } > release-notes.md
+          gh release create "$TAG" --title "DivvyUp $TAG" --notes-file release-notes.md --verify-tag --repo "$GITHUB_REPOSITORY"
+
+      - name: Reattach previous APK (native unchanged)
+        if: steps.decide.outputs.tag != '' && steps.decide.outputs.needs_apk == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.decide.outputs.tag }}
+          PREVIOUS: ${{ steps.plan.outputs.previous }}
+        run: |
+          mkdir -p apk
+          # Đã kiểm bản trước có APK ở bước trên; tải hỏng lúc này là sự cố thật —
+          # báo đỏ thay vì để một Release không có file cài mà ghi chú hứa là có.
+          gh release download "$PREVIOUS" --pattern '*.apk' --dir apk --repo "$GITHUB_REPOSITORY"
+          gh release upload "$TAG" apk/*.apk --clobber --repo "$GITHUB_REPOSITORY"
+
+  build-apk:
+    name: Build APK (native changed)
+    needs: release
+    if: needs.release.outputs.tag != '' && needs.release.outputs.needs_apk == 'true'
+    uses: ./.github/workflows/build-apk-release.yml
+    with:
+      tag: ${{ needs.release.outputs.tag }}
+    # Chỉ truyền đúng secret workflow build cần, không `inherit` toàn bộ.
+    secrets:
+      EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}

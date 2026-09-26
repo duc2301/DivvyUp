@@ -54,8 +54,9 @@
     "web": "expo start --web",
     "lint": "expo lint",
     "typecheck": "tsc --noEmit",
-    "test": "node --test \"src/**/*.test.ts\"",
-    "test:watch": "node --test --watch \"src/**/*.test.ts\""
+    "test": "node --test \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
+    "test:watch": "node --test --watch \"src/**/*.test.ts\" \"scripts/**/*.test.mjs\"",
+    "release:plan": "node scripts/release/prepare.mjs"
   },
   "private": true
 }

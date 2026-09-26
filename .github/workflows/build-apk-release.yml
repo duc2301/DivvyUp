@@ -1,8 +1,25 @@
+# Build APK trên EAS và đính vào GitHub Release của tag.
+#
+# Ba cách chạy:
+#   - auto-release.yml gọi qua workflow_call khi phần native đổi (cách thường dùng);
+#   - tạo Release bằng tay trên GitHub (release: published);
+#   - chạy tay (workflow_dispatch) cho một tag đã có release.
+# Release tạo bằng GITHUB_TOKEN KHÔNG kích sự kiện release: published — đó là lý
+# do auto-release gọi thẳng workflow này thay vì trông vào sự kiện.
 name: Release APK
 
 on:
   release:
     types: [published]
+  workflow_call:
+    inputs:
+      tag:
+        description: Tag của release (vd v1.1.0)
+        type: string
+        required: true
+    secrets:
+      EXPO_TOKEN:
+        required: true
   workflow_dispatch:
     inputs:
       tag:
@@ -13,7 +30,7 @@ permissions:
   contents: write
 
 concurrency:
-  group: release-apk-${{ github.event.release.tag_name || github.event.inputs.tag }}
+  group: release-apk-${{ inputs.tag || github.event.release.tag_name }}
   cancel-in-progress: false
 
 jobs:
@@ -26,7 +43,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 120
     env:
-      TAG: ${{ github.event.release.tag_name || github.event.inputs.tag }}
+      TAG: ${{ inputs.tag || github.event.release.tag_name }}
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -47,15 +64,17 @@ jobs:
           node-version: 22
           cache: npm
 
+      # Cài dependency TRƯỚC khi nạp EXPO_TOKEN vào môi trường: script cài đặt
+      # của một package bị chiếm quyền không đọc được token.
+      - name: Install dependencies
+        run: npm ci
+
       - name: Setup EAS CLI
         uses: expo/expo-github-action@v8
         with:
           eas-version: latest
           token: ${{ secrets.EXPO_TOKEN }}
 
-      - name: Install dependencies
-        run: npm ci
-        
       - name: Build APK on EAS
         run: |
           eas build \
