@@ -88,6 +88,24 @@ describe('computeBalances', () => {
     assert.ok(balances.every((balance) => balance.net.minor === 0));
   });
 
+  test('lẫn đơn vị tiền tệ trong payments → ném MoneyError', () => {
+    const mixed: ExpenseRecord = {
+      id: 'e1',
+      payments: [{ participantId: 'an', amount: money(100, 'USD') }],
+      shares: [{ participantId: 'binh', amount: money(2_300_000, 'VND') }],
+    };
+    assert.throws(() => computeBalances([mixed], 'VND'), MoneyError);
+  });
+
+  test('lẫn đơn vị tiền tệ trong shares → ném MoneyError', () => {
+    const mixed: ExpenseRecord = {
+      id: 'e1',
+      payments: [{ participantId: 'an', amount: money(2_300_000, 'VND') }],
+      shares: [{ participantId: 'binh', amount: money(100, 'USD') }],
+    };
+    assert.throws(() => computeBalances([mixed], 'VND'), MoneyError);
+  });
+
   test('phát hiện khoản chi hỏng: tiền ứng khác tổng phần chia', () => {
     const broken: ExpenseRecord = {
       id: 'hong',
@@ -162,6 +180,14 @@ describe('simplifyDebts — không được đổi số dư của bất kỳ ai'
       expense('e2', 'binh', 60_000, ['an', 'binh']),
     ];
     assert.deepEqual(simplifyDebts(computeBalances(expenses, 'VND')), []);
+  });
+
+  test('lẫn đơn vị tiền tệ giữa các số dư → ném MoneyError', () => {
+    const mixed: Balance[] = [
+      { participantId: 'an', net: money(100, 'USD') },
+      { participantId: 'binh', net: money(-2_300, 'VND') },
+    ];
+    assert.throws(() => simplifyDebts(mixed), MoneyError);
   });
 
   test('từ chối danh sách số dư không cân — đó là dấu hiệu có bug ở nơi khác', () => {

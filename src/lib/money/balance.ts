@@ -103,37 +103,34 @@ export function computeBalances(
 }
 
 /**
- * Tối giản công nợ: từ danh sách số dư, sinh ra tập giao dịch ít nhất có thể
- * bằng thuật toán tham lam (ghép người nợ nhiều nhất với người được nhận nhiều nhất).
- *
- * Kết quả tối đa n-1 giao dịch. Đây không phải lời giải tối ưu tuyệt đối
- * (bài toán đó là NP-hard), nhưng tốt hơn hẳn việc ai nợ ai trả nấy và
- * đủ tốt cho quy mô một nhóm bạn.
+ * Số người có số dư khác 0 — SAU khi đã tách các cặp khớp đúng số tiền — tối đa
+ * để còn tìm lời giải TỐI ƯU bằng duyệt mọi tập con, O(2^n · n). 14 người ≈
+ * 230 nghìn bước: vài ms kể cả trên Hermes (không có JIT). Vượt ngưỡng thì dùng
+ * tham lam: vẫn đúng tiền, chỉ có thể thừa vài lần chuyển.
  */
-export function simplifyDebts(balances: readonly Balance[]): Transfer[] {
-  if (balances.length === 0) return [];
+export const MAX_EXACT_SIMPLIFY = 14;
 
-  const currency = balances[0].net.currency;
-  for (const balance of balances) {
-    if (balance.net.currency !== currency) {
-      throw new MoneyError('Không thể tối giản công nợ trên nhiều đơn vị tiền tệ.');
-    }
-  }
+interface Party {
+  readonly id: string;
+  remaining: number;
+}
 
-  const sum = balances.reduce((acc, balance) => acc + balance.net.minor, 0);
-  if (sum !== 0) {
-    throw new MoneyError(`Tổng số dư của nhóm phải bằng 0, đang là ${sum} (đơn vị nhỏ nhất).`);
-  }
-
+/**
+ * Ghép tham lam trong MỘT nhóm có tổng bằng 0: người nợ nhiều nhất trả người
+ * được nhận nhiều nhất. Nhóm k người cho tối đa k-1 giao dịch.
+ */
+function settleGreedy(
+  nets: readonly { id: string; minor: number }[],
+  currency: CurrencyCode,
+): Transfer[] {
   // Sắp xếp tất định: giá trị trước, id sau. Cùng đầu vào luôn ra cùng kết quả.
-  const debtors = balances
-    .filter((balance) => balance.net.minor < 0)
-    .map((balance) => ({ id: balance.participantId, remaining: -balance.net.minor }))
+  const debtors: Party[] = nets
+    .filter((item) => item.minor < 0)
+    .map((item) => ({ id: item.id, remaining: -item.minor }))
     .sort((a, b) => b.remaining - a.remaining || a.id.localeCompare(b.id));
-
-  const creditors = balances
-    .filter((balance) => balance.net.minor > 0)
-    .map((balance) => ({ id: balance.participantId, remaining: balance.net.minor }))
+  const creditors: Party[] = nets
+    .filter((item) => item.minor > 0)
+    .map((item) => ({ id: item.id, remaining: item.minor }))
     .sort((a, b) => b.remaining - a.remaining || a.id.localeCompare(b.id));
 
   const transfers: Transfer[] = [];
@@ -156,6 +153,128 @@ export function simplifyDebts(balances: readonly Balance[]): Transfer[] {
   }
 
   return transfers;
+}
+
+/**
+ * Chia những người có số dư ≠ 0 thành NHIỀU NHÓM NHẤT có thể mà mỗi nhóm tự
+ * cân (tổng bằng 0). Số giao dịch tối thiểu của cả chuyến đúng bằng
+ * (số người) − (số nhóm), nên nhiều nhóm hơn = ít lần chuyển hơn.
+ *
+ * Quy hoạch động trên tập con: best[mask] = số nhóm cân nhiều nhất có thể xếp
+ * được từ các phần tử trong mask. Duyệt ngược để lấy ra thứ tự thêm phần tử;
+ * mỗi lần tổng tiền tố về 0 là đóng một nhóm.
+ */
+function zeroSumGroups(
+  nets: readonly { id: string; minor: number }[],
+): { id: string; minor: number }[][] {
+  const n = nets.length;
+  const size = 1 << n;
+  const sum = new Float64Array(size);
+  const best = new Int16Array(size);
+
+  for (let mask = 1; mask < size; mask += 1) {
+    const low = mask & -mask;
+    const index = 31 - Math.clz32(low);
+    sum[mask] = sum[mask ^ low] + nets[index].minor;
+    let value = -1;
+    for (let i = 0; i < n; i += 1) {
+      const bit = 1 << i;
+      if ((mask & bit) !== 0 && best[mask ^ bit] > value) value = best[mask ^ bit];
+    }
+    best[mask] = value + (sum[mask] === 0 ? 1 : 0);
+  }
+
+  // Lấy lại thứ tự: từ tập đầy, bỏ dần phần tử (chỉ số nhỏ nhất thoả) sao cho
+  // vẫn giữ được giá trị tối ưu — tất định vì luôn thử theo thứ tự chỉ số.
+  const removal: number[] = [];
+  let mask = size - 1;
+  while (mask !== 0) {
+    const target = best[mask] - (sum[mask] === 0 ? 1 : 0);
+    for (let i = 0; i < n; i += 1) {
+      const bit = 1 << i;
+      if ((mask & bit) !== 0 && best[mask ^ bit] === target) {
+        removal.push(i);
+        mask ^= bit;
+        break;
+      }
+    }
+  }
+
+  const groups: { id: string; minor: number }[][] = [];
+  let current: { id: string; minor: number }[] = [];
+  let running = 0;
+  for (const index of removal.reverse()) {
+    current.push(nets[index]);
+    running += nets[index].minor;
+    if (running === 0) {
+      groups.push(current);
+      current = [];
+    }
+  }
+  return groups;
+}
+
+/**
+ * Tối giản công nợ: từ danh sách số dư, sinh ra tập giao dịch để ai cũng về 0.
+ *
+ * Luôn tách trước các cặp khớp đúng số tiền. Phần còn lại tới
+ * MAX_EXACT_SIMPLIFY người: lời giải TỐI ƯU về số lần chuyển (tách thành nhiều
+ * nhóm tự cân nhất, rồi ghép tham lam trong từng nhóm). Nhiều hơn: tham lam.
+ * Cả hai đường đều cho tối đa n-1 giao dịch và KHÔNG đổi số dư của ai.
+ *
+ * Lưu ý khi giải thích cho người dùng: giao dịch là để CÂN SỐ DƯ, không phải
+ * trả lại đúng người đã ứng tiền cho mình. A có thể chuyển cho C dù chưa từng
+ * chi chung với C — tổng tiền A trả ra và C nhận về vẫn đúng từng đồng.
+ */
+export function simplifyDebts(balances: readonly Balance[]): Transfer[] {
+  if (balances.length === 0) return [];
+
+  const currency = balances[0].net.currency;
+  for (const balance of balances) {
+    if (balance.net.currency !== currency) {
+      throw new MoneyError('Không thể tối giản công nợ trên nhiều đơn vị tiền tệ.');
+    }
+  }
+
+  const sum = balances.reduce((acc, balance) => acc + balance.net.minor, 0);
+  if (sum !== 0) {
+    throw new MoneyError(`Tổng số dư của nhóm phải bằng 0, đang là ${sum} (đơn vị nhỏ nhất).`);
+  }
+
+  const nets = balances
+    .filter((balance) => balance.net.minor !== 0)
+    .map((balance) => ({ id: balance.participantId, minor: balance.net.minor }))
+    .sort((a, b) => a.id.localeCompare(b.id));
+  if (nets.length === 0) return [];
+
+  // Tách trước các cặp khớp đúng số tiền: mỗi cặp là một nhóm cân hai người và
+  // luôn nằm trong một lời giải tối ưu (đổi chỗ được với mọi cách chia nhóm có
+  // chứa hai người đó). Vừa giữ tối ưu vừa làm phần duyệt tập con nhỏ đi nhiều.
+  const transfers: Transfer[] = [];
+  const used = new Set<number>();
+  for (let i = 0; i < nets.length; i += 1) {
+    if (used.has(i) || nets[i].minor >= 0) continue;
+    for (let j = 0; j < nets.length; j += 1) {
+      if (!used.has(j) && nets[j].minor === -nets[i].minor) {
+        used.add(i);
+        used.add(j);
+        transfers.push({
+          from: nets[i].id,
+          to: nets[j].id,
+          amount: money(nets[j].minor, currency),
+        });
+        break;
+      }
+    }
+  }
+  const rest = nets.filter((_, index) => !used.has(index));
+  if (rest.length === 0) return transfers;
+
+  const settled =
+    rest.length <= MAX_EXACT_SIMPLIFY
+      ? zeroSumGroups(rest).flatMap((group) => settleGreedy(group, currency))
+      : settleGreedy(rest, currency);
+  return transfers.concat(settled);
 }
 
 /**
