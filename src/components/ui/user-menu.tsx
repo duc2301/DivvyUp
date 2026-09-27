@@ -1,13 +1,17 @@
+import Constants from 'expo-constants';
 import { useRouter } from 'expo-router';
+import * as Updates from 'expo-updates';
 import { useState } from 'react';
-import { ActivityIndicator, Modal, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Modal, Platform, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { signOut } from '@/features/auth/auth-actions';
 import { useSessionContext } from '@/features/auth/session-context';
 import { useTheme } from '@/features/theme/theme-context';
+import { runningVersionLabel } from '@/lib/app-update/release-check';
 import { getMyProfile } from '@/lib/data/profile';
 import { useAsync } from '@/lib/data/use-async';
+import { formatDateTime } from '@/lib/datetime';
 
 import { Avatar } from './avatar';
 import { IconButton } from './icon-button';
@@ -197,6 +201,19 @@ export function UserMenu() {
               busy={signingOut}
               onPress={() => void handleSignOut()}
             />
+          )}
+
+          {/* Số trong Cài đặt Android là của APK, không đổi qua OTA — đây là
+              chỗ duy nhất thấy bản đang chạy thật. Web không có APK/OTA. */}
+          {Platform.OS === 'web' ? null : (
+            <Text className="px-3 pb-1 pt-2 text-xs text-muted-foreground">
+              {runningVersionLabel({
+                version: Constants.expoConfig?.version ?? null,
+                updateCreatedAt: Updates.createdAt,
+                isEmbeddedLaunch: Updates.isEmbeddedLaunch,
+                formatDate: formatDateTime,
+              })}
+            </Text>
           )}
         </View>
       </Modal>

@@ -11,6 +11,7 @@ import { Archive, ChevronRight, KeyRound, Plus } from '@/components/ui/icons';
 import { Screen } from '@/components/ui/screen';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
 import { UserMenu } from '@/components/ui/user-menu';
+import { UpdateCard } from '@/features/app-update/update-card';
 import { useSessionContext } from '@/features/auth/session-context';
 import { loadDismissedReminders, saveDismissedReminders } from '@/features/trip-archive/reminder-store';
 import { listArchivedTrips, listTrips, setTripArchived } from '@/lib/data/manager';
@@ -149,6 +150,8 @@ export default function TripListScreen() {
             }
           />
         }>
+        <UpdateCard />
+
         {loading && data === null ? <LoadingView /> : null}
         {error ? <ErrorView message={error} onRetry={reload} /> : null}
 

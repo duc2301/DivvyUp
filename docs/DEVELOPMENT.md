@@ -135,6 +135,13 @@ Thay đổi chỉ nằm trong `supabase/`, `.github/`, `scripts/` hoặc file `.
 
 > **Migration database không đi theo OTA hay APK.** Phải chạy tay trong SQL Editor, **trước** khi phát hành bản app cần nó.
 
+### App tự cập nhật thế nào (`src/features/app-update/`)
+
+- **OTA:** expo-updates tự tải bản mới lúc mở app nhưng chỉ áp dụng ở lần mở **sau**. App kiểm thêm mỗi khi quay lại foreground (tối đa 15 phút/lần); tải xong thì màn danh sách chuyến hiện thẻ "Khởi động lại" để áp dụng ngay. Không bao giờ tự khởi động lại.
+- **APK:** khi phần native đổi, APK cũ không nhận OTA nữa. App (Android, kênh `preview`) hỏi GitHub Release mới nhất mỗi ngày một lần — gọi theo **id số** của repo, không theo tên — và so dấu `divvyup-runtime` trong ghi chú với runtime đang chạy. Khác runtime, có APK đúng khuôn `DivvyUp-vX.Y.Z.apk`, và tag mới hơn bản đang chạy → thẻ "Tải APK". Logic thuần + test ở `src/lib/app-update/release-check.ts`.
+- **Số phiên bản:** số trong Cài đặt Android là của APK, không đổi qua OTA. Menu tài khoản ghi "Bản cập nhật <ngày>" khi đang chạy OTA, "Phiên bản X (bản gốc của APK)" khi chưa.
+- Đổi tên file APK trong `build-apk-release.yml`, đổi định dạng dấu runtime, hoặc chuyển repo → phải sửa `release-check.ts` **trước**, và nhớ máy đã tụt runtime chỉ chạy bản kiểm tra cũ.
+
 ### Checklist trước khi phát hành
 
 - [ ] `npm run typecheck` và `npm test` qua
