@@ -16,7 +16,8 @@
       "Bash(npm run build:*)",
       "Bash(npx tsc --noEmit)",
       "Bash(npm run release:plan:*)",
-      "Bash(node scripts/sonar/fetch-report.mjs:*)"
+      "Bash(node scripts/sonar/fetch-report.mjs:*)",
+      "Bash(node .claude/skills/agent-framework/kiem-agent.mjs:*)"
     ],
     "deny": [
       "Bash(eas build:*)",
@@ -27,21 +28,27 @@
       "Read(./.env)",
       "Read(./.env.*)",
       "Read(./web/.env)",
-      "Read(./web/.env.local)"
+      "Read(./web/.env.local)",
+      "Read(./.env.secrets)",
+      "Read(./web/.env.*)"
     ]
   },
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",
-            "command": "sh -c 'in=$(cat); echo \"$in\" | grep -q \"git commit\" || exit 0; echo \"$in\" | grep -q \"INVARIANT_REVIEWED=1\" && exit 0; git diff --cached --name-only 2>/dev/null | grep -qE \"^(src/lib/(money|data|storage)/|supabase/|web/src/shared/api/)\" || exit 0; echo \"[DivvyUp] Diff đang staged đụng lõi tiền, tầng dữ liệu hoặc Supabase. Chạy agent invariant-guard (và audit-money nếu đụng src/lib/money) TRƯỚC khi commit — xem AGENTS.md mục 7. Nếu đã soát và kết luận ĐẠT, hoặc CẢNH BÁO đã được người dùng chấp nhận, nói rõ điều đó với người dùng rồi commit lại với tiền tố INVARIANT_REVIEWED=1 (ví dụ: INVARIANT_REVIEWED=1 git commit ...).\" >&2; exit 2'"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/chan-lenh-nguy-hiem.mjs\""
           },
           {
             "type": "command",
-            "command": "sh -c 'in=$(cat); echo \"$in\" | grep -qE \"git push[^|;&]*(main|origin +HEAD|--all)\" || exit 0; echo \"$in\" | grep -q \"PUSH_APPROVED=1\" && exit 0; echo \"[DivvyUp] Push lên main sẽ TỰ PHÁT HÀNH OTA tới máy người dùng. Chỉ push khi người dùng yêu cầu rõ, và migration Supabase mới (nếu có) đã được chạy TRƯỚC. Người dùng đã đồng ý rõ ràng thì push lại với tiền tố PUSH_APPROVED=1. Xem skill divvyup-release.\" >&2; exit 2'"
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/nhac-soat-bat-bien.mjs\""
+          },
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/nhac-push-main.mjs\""
           }
         ]
       }

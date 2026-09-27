@@ -65,8 +65,13 @@ Khi có lý do không hiển nhiên, đánh đổi, hoặc **việc tay khi phá
 
 ## Tạo commit
 
+Hai lệnh **riêng** — hook `.claude/hooks/nhac-soat-bat-bien.mjs` soát đúng phần đã stage, nên chặn `git add x && git commit` trong một lệnh. Stage từng file theo tên: hook `chan-lenh-nguy-hiem.mjs` chặn `git add .` / `-A` (dễ kéo theo `supabase/.temp`, file nháp).
+
 ```bash
-git add <file cụ thể>
+git add <file cụ thể> <file cụ thể>
+```
+
+```bash
 git commit -m "$(cat <<'EOF'
 fix(money): mô tả ngắn
 
@@ -81,7 +86,7 @@ Dòng `Co-Authored-By` lấy theo hướng dẫn attribution hiện hành của 
 
 ## Tuyệt đối không
 
-- **Không `git push` trừ khi người dùng yêu cầu rõ.**
+- **Không `git push` trừ khi người dùng yêu cầu rõ.** Push `main` (kể cả `git push` trần khi đang đứng trên main) bị hook `nhac-push-main.mjs` chặn tới khi có tiền tố `PUSH_APPROVED=1` — chỉ thêm tiền tố sau khi người dùng đồng ý trong chat.
 - Không `--no-verify`. Hook đỏ thì sửa nguyên nhân.
 - Không `--amend` commit đã push.
 - Không commit file chỉ khác line ending.

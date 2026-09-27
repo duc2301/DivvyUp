@@ -107,7 +107,9 @@ CI (GitHub Actions) chạy `npm run typecheck` và `npm test` cho mọi pull req
 
 ## 7. Quy tắc uỷ thác cho agent
 
-Quy trình trọn vòng một tính năng nằm ở skill **`feature-pipeline`**: đối chiếu tài liệu → lập kế hoạch → cài đặt → test → soát song song → nhật ký → tài liệu. Agent soát không phải agent viết: người viết code không tự chấm code của mình.
+Quy trình trọn vòng một tính năng nằm ở skill **`feature-pipeline`**: đối chiếu tài liệu → lập kế hoạch kèm **Tiêu chí xong** (người dùng duyệt) → cài đặt → test → soát song song → nhật ký → tài liệu. Việc được xếp **cấp Nhỏ / Vừa / Lớn** để chỉ gọi agent đáng gọi. Agent soát không phải agent viết: người viết code không tự chấm code của mình.
+
+Mọi agent theo **khung 8 điểm** của skill **`agent-framework`** (vai trò, model alias, harness, "Đọc trước", effort, cấp quyền 0/1/2, bàn giao, kiểm đúng repo); soát hình thức bằng `node .claude/skills/agent-framework/kiem-agent.mjs`. Các agent bàn giao cho nhau qua thư mục việc `.claude-run/<ma-viec>/` (`brief.md`, `progress.md`, `reports/`) — thư mục tự bỏ khỏi git bằng `.gitignore` riêng của nó, **không** sửa `.gitignore` gốc (nguồn runtime fingerprint).
 
 | Agent | Vai trò | Ghi file |
 |---|---|---|
@@ -131,9 +133,14 @@ Quy trình trọn vòng một tính năng nằm ở skill **`feature-pipeline`**
 | `change-audit-log` | nhật ký thay đổi + việc tay khi phát hành | không |
 | `docs-updater` | cập nhật tài liệu sau khi xong | **có** (chỉ tài liệu) |
 
-Skill: `feature-pipeline`, `git-commit`, `divvyup-release`, `sonar-maintain` (bảo trì theo SonarQube Cloud: đọc → phân loại → sửa theo đợt → kiểm lại Quality Gate), `divvyup-apk-release` (phát hành tự động: tự tăng số theo commit, gắn tag, tạo Release, build APK khi native đổi), `supabase-schema`. Lệnh `/audit` chạy nhanh bộ `audit-*` trên diff hiện tại.
+Skill: `feature-pipeline`, `agent-framework` (tạo/sửa/soát agent), `hieu-chuan-agent` (đo bộ agent bằng tính năng mồi có lỗi cài sẵn — chạy khi đổi model hoặc sửa agent soát), `git-commit`, `divvyup-release`, `sonar-maintain` (bảo trì theo SonarQube Cloud: đọc → phân loại → sửa theo đợt → kiểm lại Quality Gate), `divvyup-apk-release` (phát hành tự động: tự tăng số theo commit, gắn tag, tạo Release, build APK khi native đổi), `supabase-schema`. Lệnh `/audit` chạy nhanh bộ `audit-*` trên diff hiện tại.
 
-Hook trong `.claude/settings.json` chặn `git commit` khi diff đã stage đụng lõi tiền/tầng dữ liệu/Supabase cho tới khi `invariant-guard` đã soát, và chặn `git push` lên `main` (push `main` = OTA tự phát hành).
+Hook (`.claude/hooks/*.mjs`, gắn trong `.claude/settings.json`, áp cho cả Bash lẫn PowerShell):
+- `chan-lenh-nguy-hiem.mjs` — không bao giờ chạy qua agent: `git reset --hard`, `git add .`/`-A`, force push, `rm -rf`, đọc `.env*`, `supabase db push/reset` (chỉ có một project = production), `eas update/build/submit`, `gh release`/`gh workflow run`.
+- `nhac-soat-bat-bien.mjs` — chặn `git commit` đụng `src/lib/{money,data,storage}`, `supabase/`, `web/src/shared/api/` tới khi `invariant-guard` đã soát; lối ra `INVARIANT_REVIEWED=1 git commit`. `git add` và `git commit` phải là hai lệnh riêng.
+- `nhac-push-main.mjs` — chặn push lên `main` (kể cả `git push` trần khi đứng trên main); lối ra `PUSH_APPROVED=1 git push` sau khi người dùng đồng ý.
+
+Hết quota một model: đặt `ANTHROPIC_DEFAULT_OPUS_MODEL` trong `.claude/settings.local.json` (xem `agent-framework` mục 2) — khi đó kết luận ĐẠT của agent `opus` chỉ là tham khảo.
 
 **Quyết định sửa gì là của người dùng.** Agent soát chỉ trả về phát hiện; agent ghi file chỉ ghi trong phạm vi vai trò của nó.
 
