@@ -29,3 +29,6 @@ export {
 export type { PlaceResult } from '@core/lib/data/places';
 export { searchPlaces } from '@core/lib/data/places';
 export { loadCoverForPlace } from '@core/features/place/load-cover';
+
+// Lưu trữ CÁ NHÂN (bảng trip_archives) — chỉ đổi danh sách của người đăng nhập.
+export { getTripArchivedAt, listArchivedTrips, setTripArchived } from '@core/lib/data/archives';

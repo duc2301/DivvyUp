@@ -205,7 +205,7 @@ where has_table_privilege('authenticated', 'public.expense_events', quyen);
 --     không lỗi nào hiện ra.
 select v.bang, v.trigger_thieu_hoac_tat
 from (values
-  ('public.trips',      'trips_guard_identity'),
+  ('public.trips',      'trips_guard_identity'),  -- từ 20260926_1000 chặn cả deleted_at
   ('public.trips',      'trips_validate_cover'),
   ('public.trip_notes', 'trip_notes_set_actor'),
   ('public.trip_notes', 'trip_notes_forbid_undelete'),
@@ -235,3 +235,62 @@ where coalesce(lower(substring(item ->> 'url' from '^https://([A-Za-z0-9.-]+)([/
        and coalesce(lower(substring(item ->> 'link' from '^https://([A-Za-z0-9.-]+)([/?#][^[:space:]]*)?$')), '')
              <> all (array['unsplash.com', 'www.unsplash.com', 'commons.wikimedia.org',
                            'www.pinterest.com', 'pinterest.com']));
+
+
+-- 20. Migration 20260926_1000: client không còn ghi thẳng trips/settlements.
+--     Mong đợi 0 dòng. has_any_column_privilege bắt cả quyền cấp theo cột
+--     (grant update (note) on ...), has_table_privilege thì không.
+select v.vai, v.bang, v.quyen as quyen_con_mo
+from (values
+  ('authenticated', 'public.trips',         'UPDATE'),
+  ('authenticated', 'public.settlements',   'INSERT'),
+  ('authenticated', 'public.settlements',   'UPDATE'),
+  ('authenticated', 'public.trip_archives', 'UPDATE'),
+  -- anon: RLS đã chặn (mọi policy chỉ cho authenticated) — đây là lớp hai.
+  ('anon',          'public.trips',         'UPDATE'),
+  ('anon',          'public.settlements',   'INSERT'),
+  ('anon',          'public.settlements',   'UPDATE'),
+  ('anon',          'public.trip_archives', 'SELECT'),
+  ('anon',          'public.trip_archives', 'INSERT'),
+  ('anon',          'public.trip_archives', 'UPDATE')
+) as v(vai, bang, quyen)
+where has_any_column_privilege(v.vai, v.bang, v.quyen)
+union all
+select v.vai, v.bang, 'DELETE'
+from (values ('anon', 'public.trip_archives')) as v(vai, bang)
+where has_table_privilege(v.vai, v.bang, 'DELETE');
+
+
+-- 21. Policy ghi còn sót, RLS tắt, hoặc chốt deleted_at bị mất. Mong đợi 0 dòng.
+--     Chốt deleted_at mất khi ai đó chạy lại 20260925_1000 SAU 20260926_1000
+--     (bản cũ của guard_trip_identity_columns không có dòng kiểm deleted_at).
+select 'trips còn policy ghi: ' || policyname as van_de
+from pg_policies
+where schemaname = 'public' and tablename = 'trips' and cmd in ('UPDATE', 'DELETE', 'ALL')
+union all
+select 'settlements còn policy ghi: ' || policyname
+from pg_policies
+where schemaname = 'public' and tablename = 'settlements' and cmd in ('INSERT', 'UPDATE', 'DELETE', 'ALL')
+union all
+select 'trip_archives có policy lạ: ' || policyname || ' (' || cmd || ')'
+from pg_policies
+where schemaname = 'public' and tablename = 'trip_archives'
+  and (cmd in ('UPDATE', 'ALL') or coalesce(qual, '') = 'true' or coalesce(with_check, '') = 'true')
+union all
+select 'trip_archives chưa bật RLS'
+from pg_class
+where oid = 'public.trip_archives'::regclass and not relrowsecurity
+union all
+select 'guard_trip_identity_columns không còn chặn deleted_at — chạy lại 20260926_1000'
+where to_regprocedure('public.guard_trip_identity_columns()') is null
+   or pg_get_functiondef(to_regprocedure('public.guard_trip_identity_columns()'))
+        not like '%new.deleted_at is distinct from old.deleted_at%';
+
+
+-- 22. Chuyến đi đã xoá mềm. Từ migration 20260926_1000 chỉ phiên quản trị làm
+--     được; dòng có deleted_at sau ngày chạy migration = kiểm lại ai đã chạy
+--     SQL Editor. Không bắt buộc 0 dòng.
+select id as chuyen_da_xoa_mem, name, deleted_at
+from public.trips
+where deleted_at is not null
+order by deleted_at desc;

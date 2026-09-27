@@ -117,10 +117,11 @@ export interface Database {
           cover_image_index?: number;
         };
         // Tên, ngày, địa điểm, ảnh bìa đổi qua RPC update_trip_details /
-        // update_trip_place / set_trip_cover_index (mọi thành viên). Policy
-        // UPDATE chỉ còn cho chủ chuyến — app chỉ dùng nó để xoá mềm.
-        // join_code/created_by/currency: trigger trips_guard_identity chặn.
-        Update: { deleted_at?: string | null };
+        // update_trip_place / set_trip_cover_* (mọi thành viên). Không có policy
+        // UPDATE (20260926_1000). Trigger trips_guard_identity còn chặn
+        // join_code/created_by/currency/deleted_at — không có tính năng xoá
+        // chuyến, chỉ lưu trữ cá nhân ở trip_archives.
+        Update: ReadOnly;
         Relationships: [
           {
             foreignKeyName: 'trips_created_by_fkey';
@@ -367,6 +368,34 @@ export interface Database {
         ];
       };
 
+      trip_archives: {
+        Row: {
+          user_id: string;
+          trip_id: string;
+          archived_at: string;
+        };
+        // user_id mặc định auth.uid(); policy INSERT ép bằng uid.
+        Insert: { trip_id: string };
+        // Bỏ lưu trữ = DELETE dòng của chính mình; không có UPDATE.
+        Update: ReadOnly;
+        Relationships: [
+          {
+            foreignKeyName: 'trip_archives_trip_id_fkey';
+            columns: ['trip_id'];
+            isOneToOne: false;
+            referencedRelation: 'trips';
+            referencedColumns: ['id'];
+          },
+          {
+            foreignKeyName: 'trip_archives_user_id_fkey';
+            columns: ['user_id'];
+            isOneToOne: false;
+            referencedRelation: 'profiles';
+            referencedColumns: ['id'];
+          },
+        ];
+      };
+
       settlements: {
         Row: {
           id: string;
@@ -381,18 +410,10 @@ export interface Database {
           created_at: string;
           deleted_at: string | null;
         };
-        Insert: {
-          id?: string;
-          trip_id: string;
-          currency: string;
-          from_member: string;
-          to_member: string;
-          amount_minor: number;
-          settled_at?: string;
-          note?: string | null;
-          created_by: string;
-        };
-        Update: { note?: string | null; deleted_at?: string | null };
+        // 20260926_1000: client không INSERT/UPDATE được (không policy, đã
+        // revoke) — ghi tất toán sau này phải qua RPC có nhật ký.
+        Insert: ReadOnly;
+        Update: ReadOnly;
         Relationships: [
           {
             foreignKeyName: 'settlements_trip_currency_fkey';

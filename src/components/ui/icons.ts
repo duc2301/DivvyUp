@@ -16,6 +16,8 @@
 
 import type { LucideIcon } from 'lucide-react-native';
 import {
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   ArrowRightLeft,
   CalendarDays,
@@ -81,6 +83,8 @@ function withClassName(icon: LucideIcon): void {
 }
 
 [
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   ArrowRightLeft,
   CalendarDays,
@@ -136,6 +140,8 @@ function withClassName(icon: LucideIcon): void {
 ].forEach(withClassName);
 
 export {
+  Archive,
+  ArchiveRestore,
   ArrowRight,
   ArrowRightLeft,
   CalendarDays,

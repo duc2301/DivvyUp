@@ -250,44 +250,6 @@ export async function getTripBalances(tripId: string): Promise<NamedBalance[]> {
   return balances;
 }
 
-export interface RecordSettlementInput {
-  readonly tripId: string;
-  readonly fromMemberId: string;
-  readonly toMemberId: string;
-  readonly amount: Money;
-  readonly note?: string;
-}
-
-export async function recordSettlement(input: RecordSettlementInput): Promise<void> {
-  if (input.fromMemberId === input.toMemberId) {
-    throw new DataError('Không thể tự chuyển tiền cho chính mình.');
-  }
-  if (input.amount.minor <= 0) {
-    throw new DataError('Số tiền tất toán phải lớn hơn 0.');
-  }
-
-  const { data, error } = await supabase.auth.getUser();
-  if (error) {
-    throw new DataError(`Lỗi xác thực: ${error.message}`);
-  }
-  const userId = data.user?.id;
-  if (!userId) {
-    throw new DataError('Bạn cần đăng nhập để ghi nhận tất toán.');
-  }
-
-  unwrapVoid(
-    await supabase.from('settlements').insert({
-      trip_id: input.tripId,
-      currency: input.amount.currency,
-      from_member: input.fromMemberId,
-      to_member: input.toMemberId,
-      amount_minor: input.amount.minor,
-      note: input.note ?? null,
-      created_by: userId,
-    }),
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Nhật ký khoản chi — ghi bởi RPC (bảng expense_events), client chỉ đọc.
 // ---------------------------------------------------------------------------

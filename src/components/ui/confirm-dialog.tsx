@@ -33,7 +33,15 @@ export function ConfirmDialog({
   onCancel,
 }: ConfirmDialogProps) {
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onCancel}>
+    // Nút Back Android cũng không được đóng hộp thoại khi đang xử lý — cùng lý
+    // do với lớp nền bên dưới.
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={() => {
+        if (!busy) onCancel();
+      }}>
       <View className="flex-1 items-center justify-center px-6">
         {/* Chạm ra ngoài để huỷ — trừ lúc đang xử lý, kẻo đóng hộp thoại giữa
             chừng khi lệnh xoá đã gửi đi. */}

@@ -58,6 +58,8 @@ Mở **SQL Editor**, chạy lần lượt các file trong `supabase/migrations/`
 
 > ⚠️ Không chạy lại `20260916_1040_lock_trip_members.sql` **sau** `20260917_1000_harden_members_settlements.sql`: nó ghi đè trigger bằng bản cũ và làm hỏng việc thêm thành viên.
 
+> ⚠️ Không chạy lại `20260925_1000_trip_collab_notes_history.sql` **sau** `20260926_1000_trip_archives_lock_deletes.sql`: nó ghi đè `guard_trip_identity_columns` bằng bản chưa chặn xoá chuyến đi (`deleted_at`).
+
 Migration `20260917_1100_profile_payment_settled.sql` tự tạo hai bucket Storage kèm policy: `avatars` (công khai) và `payment-qr` (riêng tư). Không cần tạo tay trên dashboard.
 
 `supabase/verify.sql` dùng để kiểm tra nhanh sau khi chạy.
@@ -157,6 +159,7 @@ src/
   features/place/      chọn điểm đến, ảnh bìa
   lib/money/           tiền: chia, số dư, định dạng (có unit test)
   lib/data/            truy cập dữ liệu, tự chọn Supabase hoặc lưu trên máy (khách)
+  lib/trips/           lõi thuần lưu trữ chuyến đi (đã kết thúc chưa, nhắc lưu trữ) — dùng chung mobile/web
   lib/supabase/        client, kiểu database, xử lý lỗi
   lib/storage/         lưu trữ trên máy (chế độ khách)
   lib/weather/         khung giờ dự báo, mã thời tiết

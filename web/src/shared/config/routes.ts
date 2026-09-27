@@ -8,6 +8,7 @@ export const routes = {
   forgotPassword: () => '/forgot-password',
   resetPassword: () => '/reset-password',
   profile: () => '/profile',
+  archive: () => '/archive',
   tripNew: () => '/trips/new',
   join: (code?: string) => (code ? `/join?code=${encodeURIComponent(code)}` : '/join'),
   trip: (tripId: string) => `/trips/${encodeURIComponent(tripId)}`,

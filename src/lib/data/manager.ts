@@ -14,6 +14,7 @@ import { computeBalances } from '@/lib/money';
 import type { StoredExpense, StoredMember, StoredNote, StoredTrip } from '@/lib/storage/local-store';
 import { localId, localStore } from '@/lib/storage/local-store';
 import { DataError } from '@/lib/supabase/errors';
+import type { ArchivedTrips } from '@/lib/trips/archive';
 
 import type {
   ExpenseDetail,
@@ -22,10 +23,10 @@ import type {
   ExpenseSnapshot,
   ExpenseSummary,
   NamedBalance,
-  RecordSettlementInput,
   SaveExpenseInput,
   TripLedger,
 } from './expenses';
+import * as remoteArchives from './archives';
 import * as remoteExpenses from './expenses';
 import type { NoteTemplateKey, TripNote } from './notes';
 import * as remoteNotes from './notes';
@@ -63,6 +64,31 @@ function guestUnsupported(what: string): never {
 export async function listTrips(): Promise<TripSummary[]> {
   if (await isGuestMode()) return localStore.listTrips();
   return remoteTrips.listTrips();
+}
+
+/** Chuyến đi NGƯỜI NÀY đã lưu trữ: id → thời điểm. Người khác không bị ảnh hưởng. */
+export async function listArchivedTrips(): Promise<ArchivedTrips> {
+  if (await isGuestMode()) {
+    const archives = await localStore.listArchives();
+    return new Map(archives.map((item) => [item.tripId, item.archivedAt]));
+  }
+  return remoteArchives.listArchivedTrips();
+}
+
+export async function getTripArchivedAt(tripId: string): Promise<string | null> {
+  if (await isGuestMode()) {
+    const found = (await localStore.listArchives()).find((item) => item.tripId === tripId);
+    return found?.archivedAt ?? null;
+  }
+  return remoteArchives.getTripArchivedAt(tripId);
+}
+
+export async function setTripArchived(tripId: string, archived: boolean): Promise<void> {
+  if (await isGuestMode()) {
+    await localStore.setArchived(tripId, archived);
+    return;
+  }
+  await remoteArchives.setTripArchived(tripId, archived);
 }
 
 export async function getTrip(tripId: string): Promise<TripSummary> {
@@ -639,11 +665,6 @@ export async function getTripBalances(tripId: string): Promise<NamedBalance[]> {
     });
   }
   return remoteExpenses.getTripBalances(tripId);
-}
-
-export async function recordSettlement(input: RecordSettlementInput): Promise<void> {
-  if (await isGuestMode()) return guestUnsupported('ghi nhận tất toán');
-  await remoteExpenses.recordSettlement(input);
 }
 
 // ---------------------------------------------------------------------------

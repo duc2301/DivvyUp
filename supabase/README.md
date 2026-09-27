@@ -14,6 +14,8 @@ auth.users → profiles
 
                 view trip_balances  (net = đã ứng − phải gánh + đã trả − đã nhận,
                                       bỏ qua khoản chi đã đánh dấu "đã xong")
+
+trip_archives (user_id, trip_id) — lưu trữ hiển thị riêng từng người, không thuộc cây trên
 ```
 
 **Điểm then chốt: `trip_members` không phải tài khoản.** Nó là một cái tên do người tổ chức nhập, `user_id` để trống. Khi người đó được mời và nhận chỗ, `user_id` mới được gắn. Nhờ vậy người chưa cài app vẫn có công nợ đầy đủ.
@@ -38,8 +40,9 @@ Chạy **đúng thứ tự**, mỗi file một lần, trong SQL Editor của das
 | 10 | `migrations/20260917_1000_harden_members_settlements.sql` | siết thành viên/tất toán, xoá mềm một chiều, `is_privileged_session()` |
 | 11 | `migrations/20260917_1100_profile_payment_settled.sql` | ảnh đại diện, mã QR nhận tiền (Storage), khoản chi "đã xong" |
 | 12 | `migrations/20260925_1000_trip_collab_notes_history.sql` | thành viên sửa chuyến qua RPC, khoá `join_code`/`created_by`/`currency`, bảng `trip_notes`, nhật ký `expense_events`, bỏ policy UPDATE của `expenses` |
+| 13 | `migrations/20260926_1000_trip_archives_lock_deletes.sql` | bảng `trip_archives` (lưu trữ chuyến đi riêng từng người), chặn xoá chuyến qua trigger `trips_guard_identity` (cả deleted_at), bỏ policy UPDATE của `trips`, bỏ policy INSERT/UPDATE của `settlements`. **Không chạy lại migration 12 sau file này** — nó ghi đè `guard_trip_identity_columns` bằng bản chưa chặn `deleted_at` |
 
-Xong thì chạy `verify.sql` — **19 truy vấn, tất cả phải trả về 0 dòng**.
+Xong thì chạy `verify.sql` — **22 truy vấn, mục 1–21 phải trả về 0 dòng** (mục 22 chỉ để soát thủ công, không bắt buộc 0 dòng).
 
 ## Những quyết định đáng nhớ
 
@@ -53,7 +56,11 @@ Xong thì chạy `verify.sql` — **19 truy vấn, tất cả phải trả về 
 
 **Thành viên không lọt được sang chuyến đi khác.** `trip_members.group_id` tham chiếu composite `(id, trip_id)` của `trip_groups`; người trả và người gánh được trigger `check_member_belongs_to_trip` kiểm.
 
-**`expenses` và `expense_shares` không có policy INSERT, `expenses` không có policy UPDATE (từ migration 12).** Cố ý — mọi thay đổi khoản chi bắt buộc qua RPC `create_expense()` / `update_expense()` / `void_expense()` / `set_expense_settled()`. Client không tạo được khoản chi lệch tổng dù cố tình, và không vòng qua được nhật ký.
+**`expenses` và `expense_shares` không có policy INSERT, `expenses` không có policy UPDATE.** Cố ý — mọi thay đổi khoản chi bắt buộc qua RPC `create_expense()` / `update_expense()` / `void_expense()` / `set_expense_settled()`. Client không tạo được khoản chi lệch tổng dù cố tình, và không vòng qua được nhật ký.
+
+**`trips` không có policy UPDATE, `settlements` không có policy INSERT/UPDATE.** Client không xoá được chuyến đi (kể cả xoá mềm) hay ghi tất toán trực tiếp. Sửa chuyến đi đi qua RPC `update_trip_details()` / `update_trip_place()` / `set_trip_cover_index()`; app không có tính năng xoá chuyến, người dùng chỉ **lưu trữ** (bảng `trip_archives`, riêng của từng người, không đụng dữ liệu chuyến). Ghi tất toán hiện chưa có đường vào từ client — cần tính năng đó thì phải viết RPC `SECURITY DEFINER` có nhật ký, không mở lại policy.
+
+**`trip_archives` là lưu trữ hiển thị, không phải dữ liệu chuyến đi.** Mỗi dòng nghĩa là "người này đã cất chuyến khỏi danh sách của họ" — không ảnh hưởng quyền xem, khoản chi, hay người khác trong chuyến. Không có policy UPDATE (bỏ lưu trữ = xoá dòng, không sửa).
 
 **Nhật ký `expense_events` ghi bên trong 4 RPC trên**, cùng transaction với thay đổi: mỗi dòng giữ ảnh chụp trọn khoản chi trước/sau (mô tả, số tiền, người trả, phần chia). Bảng chỉ có policy SELECT — không ai sửa được lịch sử.
 

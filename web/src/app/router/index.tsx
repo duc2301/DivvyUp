@@ -1,5 +1,6 @@
 import { createBrowserRouter } from 'react-router';
 
+import { ArchivePage } from '@/pages/archive';
 import { BalancesPage } from '@/pages/balances';
 import { ExpenseFormPage } from '@/pages/expense-form';
 import { ExpenseHistoryPage } from '@/pages/expense-history';
@@ -35,6 +36,7 @@ export const router = createBrowserRouter([
     children: [
       { path: '/', element: <TripsPage /> },
       { path: '/profile', element: <ProfilePage /> },
+      { path: '/archive', element: <ArchivePage /> },
       { path: '/join', element: <JoinPage /> },
       { path: '/trips/new', element: <TripNewPage /> },
       { path: '/trips/:tripId', element: <TripPage /> },

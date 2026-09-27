@@ -7,9 +7,10 @@ import { listAllExpenses } from '@/entities/expense';
 import { listTripMembers } from '@/entities/member';
 import { getTrip, tripDateLabel, updateCoverIndex, useBackgroundCover } from '@/entities/trip';
 import { useSession } from '@/entities/session';
+import { ArchiveCard } from '@/features/archive-trip';
 import { describeError, useAsync } from '@/shared/lib/async';
 import { routes } from '@/shared/config';
-import { formatMoney, money, sumMoney } from '@/shared/lib/money';
+import { formatMoney, money, simplifyDebts, sumMoney } from '@/shared/lib/money';
 import { ErrorView, LoadingView, SegmentedControl } from '@/shared/ui';
 import { BalancePanel } from '@/widgets/balance-panel';
 import { ExpenseList } from '@/widgets/expense-list';
@@ -142,6 +143,8 @@ export function TripPage() {
               <span className="text-xs text-muted-foreground">Kế hoạch, lưu ý…</span>
               <ChevronRight size={18} className="text-muted-foreground" aria-hidden />
             </Link>
+
+            <ArchiveCard trip={data.trip} openTransfers={simplifyDebts(data.balances).length} />
 
             <div className="mt-2">
               <SegmentedControl options={TABS} value={tab} onChange={setTab} ariaLabel="Chọn nội dung hiển thị" />

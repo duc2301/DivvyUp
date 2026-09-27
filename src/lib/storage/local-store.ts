@@ -45,6 +45,12 @@ export interface StoredGroup extends TripGroup {
   readonly tripId: string;
 }
 
+/** Khách lưu trữ một chuyến — cùng ý nghĩa với một dòng trip_archives. */
+export interface StoredArchive {
+  readonly tripId: string;
+  readonly archivedAt: string;
+}
+
 /** Ghi chú khách. Xoá khách là xoá cứng — không có ai khác cần xem lịch sử. */
 export type StoredNote = TripNote;
 
@@ -157,6 +163,7 @@ export class LocalStore {
     groups: 'divvyup_local_groups',
     notes: 'divvyup_local_notes',
     expenseEvents: 'divvyup_local_expense_events',
+    archives: 'divvyup_local_trip_archives',
   };
 
   async get<T>(key: string): Promise<T[]> {
@@ -221,6 +228,27 @@ export class LocalStore {
     await this.set(
       this.keys.trips,
       trips.filter((item) => item.id !== id),
+    );
+  }
+
+  // --- Lưu trữ (tuỳ chọn hiển thị của khách, cùng hình dạng trip_archives) ---
+  async listArchives(): Promise<StoredArchive[]> {
+    const raw = await this.get<Partial<StoredArchive>>(this.keys.archives);
+    return raw.filter(
+      (item): item is StoredArchive =>
+        typeof item.tripId === 'string' && typeof item.archivedAt === 'string',
+    );
+  }
+
+  async setArchived(tripId: string, archived: boolean): Promise<void> {
+    const archives = await this.listArchives();
+    const exists = archives.some((item) => item.tripId === tripId);
+    if (archived === exists) return;
+    await this.set(
+      this.keys.archives,
+      archived
+        ? [...archives, { tripId, archivedAt: new Date().toISOString() }]
+        : archives.filter((item) => item.tripId !== tripId),
     );
   }
 

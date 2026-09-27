@@ -4,6 +4,7 @@ import { FlatList, Pressable, Text, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import type { TransferPerson } from '@/components/money/transfer-row';
+import { ArchiveCard } from '@/components/trip/archive-card';
 import { TransferRow } from '@/components/money/transfer-row';
 import { Avatar } from '@/components/ui/avatar';
 import {
@@ -26,15 +27,17 @@ import { useTripForecast } from '@/features/weather/use-trip-forecast';
 import type { ExpenseSummary } from '@/lib/data/expenses';
 import {
   getTrip,
+  getTripArchivedAt,
   getTripBalances,
   listAllExpenses,
   listTripLedger,
   listTripMembers,
   setExpenseSettled,
+  setTripArchived,
   updateCoverIndex,
 } from '@/lib/data/manager';
 import { describeError, useAsync } from '@/lib/data/use-async';
-import { formatRelativeDateTime, formatTripDateRange } from '@/lib/datetime';
+import { formatRelativeDateTime, formatTripDateRange, toIsoDate } from '@/lib/datetime';
 import {
   applyTransfers,
   formatMoney,
@@ -44,6 +47,7 @@ import {
   sumMoney,
 } from '@/lib/money';
 import { DataError } from '@/lib/supabase/errors';
+import { isTripEnded } from '@/lib/trips/archive';
 
 type Tab = 'expenses' | 'balances' | 'members';
 
@@ -115,6 +119,34 @@ export default function TripScreen() {
     }
     return debts;
   }, [tripId, needsLedger]);
+  // Lưu trữ là tuỳ chọn riêng của người xem — tải tách khỏi dữ liệu chuyến:
+  // lỗi ở đây không được làm hỏng cả màn.
+  // "Hôm nay" lấy cùng lần tải, không trong render (React Compiler giữ hằng).
+  const archive = useAsync(async () => {
+    const archivedAt = tripId ? await getTripArchivedAt(tripId) : null;
+    return { archivedAt, today: toIsoDate(new Date()) };
+  }, [tripId]);
+  const [archiving, setArchiving] = useState(false);
+  // Kết quả bấm gần nhất. Không tải lại archive sau khi bấm: tải lại thì thẻ
+  // biến mất trong lúc chờ, đúng lúc người dùng đang nhìn vào nó.
+  const [archivedOverride, setArchivedOverride] = useState<string | null | undefined>(undefined);
+  const archivedAt =
+    archivedOverride !== undefined ? archivedOverride : (archive.data?.archivedAt ?? null);
+  const toggleArchived = async (): Promise<void> => {
+    if (!tripId || archiving) return;
+    setArchiving(true);
+    setActionError(null);
+    try {
+      const next = archivedAt === null;
+      await setTripArchived(tripId, next);
+      setArchivedOverride(next ? new Date().toISOString() : null);
+    } catch (caught) {
+      setActionError(describeError(caught));
+    } finally {
+      setArchiving(false);
+    }
+  };
+
   const reloadAll = (): void => {
     reload();
     direct.reload();
@@ -130,7 +162,10 @@ export default function TripScreen() {
       }
       reload();
       direct.reload();
-    }, [reload, direct.reload]),
+      // Ngày có thể đã sang hôm sau, hoặc vừa lưu trữ/bỏ lưu trữ ở màn khác.
+      setArchivedOverride(undefined);
+      archive.reload();
+    }, [reload, direct.reload, archive.reload]),
   );
 
   // Dự báo tự dùng bộ nhớ đệm 3 tiếng — tải lại màn chuyến đi không gọi mạng lại.
@@ -357,6 +392,20 @@ export default function TripScreen() {
               <Text className="text-xs text-muted-foreground">Kế hoạch, lưu ý…</Text>
               <ChevronRight size={18} className="text-muted-foreground" />
             </Pressable>
+
+            {archive.error ? (
+              <Text className="mt-3 text-xs text-negative">
+                Không đọc được trạng thái lưu trữ: {archive.error}
+              </Text>
+            ) : archive.data ? (
+              <ArchiveCard
+                archivedAt={archivedAt}
+                ended={isTripEnded(data.trip, archive.data.today)}
+                openTransfers={transfers.length}
+                busy={archiving}
+                onToggle={() => void toggleArchived()}
+              />
+            ) : null}
 
             <View className="mt-5">
               <SegmentedControl
