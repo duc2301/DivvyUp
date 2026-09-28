@@ -125,7 +125,10 @@ export async function updateMyProfile(input: {
   const user = await requireUserId();
   const displayName = input.displayName.trim();
   if (displayName === '') throw new DataError('Tên hiển thị không được để trống.');
-  if (displayName.length > 80) throw new DataError('Tên hiển thị tối đa 80 ký tự.');
+  // Đếm theo code point như Postgres (CHECK, left(...,80) trong handle_new_user),
+  // không theo .length (UTF-16): tên Google có emoji đủ 80 ký tự ở DB mà .length
+  // báo quá dài.
+  if ([...displayName].length > 80) throw new DataError('Tên hiển thị tối đa 80 ký tự.');
   const note = input.paymentNote.trim();
   if (note.length > 120) throw new DataError('Ghi chú nhận tiền tối đa 120 ký tự.');
 

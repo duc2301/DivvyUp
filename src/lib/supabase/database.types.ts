@@ -441,6 +441,11 @@ export interface Database {
     };
 
     Functions: {
+      /** Người gọi chưa có mật khẩu (mới tạo qua Google) — cổng "Đặt mật khẩu". */
+      account_needs_password: {
+        Args: Record<string, never>;
+        Returns: boolean;
+      };
       create_trip_group: {
         Args: { p_trip_id: string; p_name: string; p_member_count?: number };
         Returns: string;

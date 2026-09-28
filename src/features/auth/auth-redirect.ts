@@ -20,6 +20,8 @@ export interface AuthRedirect {
   /** 'signup' | 'recovery' | 'magiclink' | … — để nguyên chuỗi, Supabase có thể thêm loại mới. */
   readonly type: string | null;
   readonly errorCode: string | null;
+  /** Tham số `error` thô (errorCode ưu tiên error_code) — để nhận ra access_denied. */
+  readonly error: string | null;
   readonly errorDescription: string | null;
 }
 
@@ -52,6 +54,7 @@ export function parseAuthRedirect(url: string | null | undefined): AuthRedirect 
     refreshToken: read('refresh_token'),
     type: read('type'),
     errorCode: read('error_code') ?? read('error'),
+    error: read('error'),
     errorDescription: read('error_description'),
   };
 
@@ -61,6 +64,31 @@ export function parseAuthRedirect(url: string | null | undefined): AuthRedirect 
     result.refreshToken !== null ||
     result.errorCode !== null;
   return hasAnything ? result : null;
+}
+
+/**
+ * Người dùng tự huỷ ở Google (bấm Huỷ ở màn đồng ý) — không phải lỗi: Google
+ * trả `error=access_denied` và không có mã riêng. GoTrue lại đổi MỌI lỗi 403
+ * thành `error=access_denied` kèm `error_code` riêng (user_banned,
+ * provider_email_needs_verification…) — những lỗi đó phải báo, không coi là huỷ.
+ */
+export function isOAuthCancellation(redirect: AuthRedirect): boolean {
+  return (
+    redirect.error === 'access_denied' &&
+    (redirect.errorCode === null || redirect.errorCode === 'access_denied')
+  );
+}
+
+/**
+ * Câu tiếng Việt cho lỗi khi quay về từ Google — không dùng câu của link email
+ * ("yêu cầu gửi lại email" vô nghĩa ở đây). Như describeRedirectError: KHÔNG
+ * hiện error_description.
+ */
+export function describeOAuthError(redirect: AuthRedirect): string {
+  if (redirect.errorCode === 'provider_email_needs_verification') {
+    return 'Email Google của bạn chưa được xác minh. Kiểm tra hộp thư để xác minh rồi thử lại.';
+  }
+  return 'Không đăng nhập được bằng Google. Thử lại, hoặc dùng email và mật khẩu.';
 }
 
 /** Câu tiếng Việt cho lỗi của link trong email. */

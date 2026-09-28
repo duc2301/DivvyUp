@@ -1,8 +1,13 @@
 import type { AuthError } from '@supabase/supabase-js';
 import * as Linking from 'expo-linking';
+import * as WebBrowser from 'expo-web-browser';
+
+import { isExistingAccountSignUp } from '@/lib/auth/password-gate';
 
 import { setRememberSession, supabase } from '@/lib/supabase/client';
 import { DataError } from '@/lib/supabase/errors';
+
+import { describeOAuthError, isOAuthCancellation, parseAuthRedirect } from './auth-redirect';
 
 /**
  * Lỗi do Supabase Auth giới hạn tần suất.
@@ -94,6 +99,24 @@ function toDataError(error: AuthError): DataError {
   if (code === 'session_not_found' || code === 'session_expired' || lower.includes('auth session missing')) {
     return new DataError('Phiên đặt lại mật khẩu đã hết hạn. Hãy yêu cầu gửi lại email mới.', code);
   }
+  if (code === 'provider_email_needs_verification') {
+    return new DataError(
+      'Email Google của bạn chưa được xác minh. Kiểm tra hộp thư để xác minh rồi thử lại.',
+      code,
+    );
+  }
+  if (code === 'validation_failed' && lower.includes('provider is not enabled')) {
+    return new DataError('Đăng nhập Google chưa được bật trên hệ thống. Hãy dùng email và mật khẩu.', code);
+  }
+  if (code === 'reauthentication_needed') {
+    return new DataError(
+      'Phiên đăng nhập đã lâu. Đăng xuất rồi đăng nhập lại bằng Google, sau đó đặt mật khẩu ngay.',
+      code,
+    );
+  }
+  if (code === 'identity_already_exists') {
+    return new DataError('Tài khoản Google này đã gắn với một tài khoản khác.', code);
+  }
   if (lower.includes('error sending')) {
     return new DataError(
       'Máy chủ không gửi được email. Thử lại sau ít phút.',
@@ -112,7 +135,8 @@ function toDataError(error: AuthError): DataError {
  * Supabase chỉ chuyển hướng về URL nằm trong danh sách Redirect URLs của dự án
  * (Authentication → URL Configuration). URL lạ bị lờ đi và người dùng rơi về
  * Site URL — thường là localhost:3000, trang trắng. Phải thêm `divvyup://**`,
- * `exp://**` và địa chỉ web đang chạy vào danh sách đó.
+ * địa chỉ web thật vào danh sách đó — KHÔNG thêm `exp://**` trên production
+ * (xem docs/DEVELOPMENT.md, mục Auth: chiếm phiên qua Expo Go khi có Google).
  *
  * Đường dẫn KHÔNG có dấu / đầu: với scheme riêng, createURL('/x') sinh ra
  * `divvyup:///x` (ba gạch chéo) và router không khớp được màn nào.
@@ -149,7 +173,7 @@ export async function signUpWithPassword(
   email: string,
   password: string,
   displayName: string,
-): Promise<{ needsEmailConfirmation: boolean }> {
+): Promise<{ needsEmailConfirmation: boolean; alreadyRegistered: boolean }> {
   const name = displayName.trim();
   if (name === '') throw new DataError('Hãy nhập tên hiển thị.');
 
@@ -163,9 +187,14 @@ export async function signUpWithPassword(
   });
   if (error) throw toDataError(error);
 
+  // Email đã có tài khoản (kể cả tạo qua Google): Supabase vẫn trả "thành
+  // công" để không ai dò được email, nhưng identities rỗng và KHÔNG gửi email.
+  if (isExistingAccountSignUp(data.user)) {
+    return { needsEmailConfirmation: false, alreadyRegistered: true };
+  }
   // Khi dự án bật "Confirm email" (mặc định BẬT), signUp trả về user nhưng KHÔNG
   // có session. Nếu dự án tắt xác nhận thì đã có session — AuthGate tự vào app.
-  return { needsEmailConfirmation: data.session === null };
+  return { needsEmailConfirmation: data.session === null, alreadyRegistered: false };
 }
 
 export async function resendSignUpConfirmation(email: string): Promise<void> {
@@ -232,6 +261,94 @@ export async function completePasswordReset(
     return { otherDevicesSignedOut: false };
   }
   return { otherDevicesSignedOut: true };
+}
+
+// ---------------------------------------------------------------------------
+// Đăng nhập Google
+//
+// Luồng PKCE qua trình duyệt hệ thống (Custom Tab / ASWebAuthenticationSession)
+// bằng expo-web-browser — module đã có trong mọi APK đã phát, nên KHÔNG cần build
+// APK mới. Đừng thêm "expo-web-browser" vào plugins của app.json: nó có
+// app.plugin.js, thêm vào là runtime fingerprint đổi và OTA không tới APK cũ.
+//
+// Liên kết tài khoản cùng email do Supabase tự làm (automatic identity linking).
+// Người mới chưa có mật khẩu → cổng "Đặt mật khẩu" (AuthGate + set-password).
+// ---------------------------------------------------------------------------
+
+/**
+ * Lần đổi của từng mã PKCE — mã chỉ dùng được một lần mà hai đường cùng nhận
+ * (xem dưới). Lưu PROMISE, không chỉ đánh dấu: đường tới sau phải CHỜ lần đổi
+ * đang chạy, không được coi là xong ngay (nút Google thôi quay khi chưa có phiên).
+ */
+const exchanges = new Map<string, Promise<void>>();
+
+/**
+ * Đổi mã OAuth ra phiên. Gọi từ signInWithGoogle, và từ màn sign-in khi deep
+ * link tới mà openAuthSessionAsync không trả 'success' (Android có máy đóng tab
+ * trả 'dismiss', hoặc hệ điều hành giết app giữa chừng). Mã đã đổi thì bỏ qua.
+ */
+export function exchangeOAuthCode(code: string, flowId: string | null): Promise<void> {
+  const running = exchanges.get(code);
+  if (running) return running;
+  // Giữ cả khi lỗi, không đổi lại: supabase-js xoá mã xác minh PKCE sau mỗi lần
+  // đổi, kể cả lần lỗi — đổi lại cùng mã chắc chắn hỏng và chỉ đè lên lỗi thật
+  // bằng một lỗi khó hiểu. Muốn thử lại thì bấm Google lần nữa (mã mới).
+  const exchange = (async () => {
+    const { error } = await supabase.auth.exchangeCodeForSession(
+      code,
+      flowId ? { flowId } : undefined,
+    );
+    if (error) throw toDataError(error);
+  })();
+  exchanges.set(code, exchange);
+  return exchange;
+}
+
+/**
+ * Đăng nhập (hoặc tạo tài khoản) bằng Google. 'cancelled' khi người dùng đóng
+ * trình duyệt / bấm huỷ ở Google — không phải lỗi, màn hình không báo gì.
+ */
+export async function signInWithGoogle(remember: boolean): Promise<'signed-in' | 'cancelled'> {
+  // Đặt kho lưu phiên TRƯỚC — supabase-js ghi phiên ngay khi đổi mã xong.
+  await setRememberSession(remember);
+  const redirectTo = appLink('sign-in', { oauth: '1' });
+  const { data, error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo,
+      skipBrowserRedirect: true,
+      // Luôn hiện bộ chọn tài khoản: người vừa huỷ ở cổng đặt mật khẩu phải đổi
+      // được tài khoản Google, không bị đăng nhập lặng lẽ vào đúng tài khoản cũ.
+      queryParams: { prompt: 'select_account' },
+    },
+  });
+  if (error) throw toDataError(error);
+
+  const result = await WebBrowser.openAuthSessionAsync(data.url, redirectTo);
+  if (result.type !== 'success') return 'cancelled';
+
+  const redirect = parseAuthRedirect(result.url);
+  if (!redirect) return 'cancelled';
+  if (redirect.errorCode) {
+    // Người dùng bấm Huỷ ở màn đồng ý của Google → không phải lỗi.
+    if (isOAuthCancellation(redirect)) return 'cancelled';
+    throw new DataError(describeOAuthError(redirect), redirect.errorCode);
+  }
+  if (!redirect.code) return 'cancelled';
+  // flowId của redirect ưu tiên; thiếu thì dùng của lần gọi này (cùng một luồng).
+  const flowId = redirect.flowId ?? (data as { flowId?: string | null }).flowId ?? null;
+  await exchangeOAuthCode(redirect.code, flowId);
+  return 'signed-in';
+}
+
+/**
+ * Đặt mật khẩu lần đầu cho tài khoản tạo qua Google. KHÔNG đăng xuất như
+ * completePasswordReset — người dùng đang ở cổng và vào app ngay sau đó.
+ */
+export async function setInitialPassword(password: string): Promise<void> {
+  if (password.length < 6) throw new DataError('Mật khẩu phải có ít nhất 6 ký tự.');
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw toDataError(error);
 }
 
 export async function signOut(): Promise<void> {

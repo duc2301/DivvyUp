@@ -13,6 +13,7 @@ import {
 } from 'expo-router';
 import * as SplashScreen from 'expo-splash-screen';
 import { useEffect, useRef } from 'react';
+import { ActivityIndicator, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 
 import { AnimatedSplashOverlay } from '@/components/animated-icon';
@@ -33,6 +34,16 @@ const DARK_BACKGROUND = '#0F172A';
 /** Màn mở được khi chưa đăng nhập. */
 const PUBLIC_SCREENS = new Set(['sign-in', 'forgot-password', 'reset-password']);
 
+/** Cổng tài khoản mới qua Google: chưa đặt mật khẩu thì chỉ ở màn này. */
+const SET_PASSWORD_SCREEN = 'set-password';
+
+/**
+ * Màn KHÔNG bị cổng đặt mật khẩu chặn: luồng "Quên mật khẩu" của tài khoản chỉ
+ * có Google tạo phiên khôi phục — để nó đặt mật khẩu ở reset-password như bình
+ * thường (rồi đăng xuất mọi thiết bị), không kéo sang set-password.
+ */
+const GATE_EXEMPT_SCREENS = new Set([SET_PASSWORD_SCREEN, 'reset-password']);
+
 /**
  * Màn chỉ dành cho người CHƯA đăng nhập — đã vào app rồi thì đẩy về trang chủ.
  * reset-password cố ý KHÔNG nằm đây: link đặt lại mật khẩu tự tạo phiên đăng
@@ -41,7 +52,7 @@ const PUBLIC_SCREENS = new Set(['sign-in', 'forgot-password', 'reset-password'])
 const SIGNED_OUT_ONLY = new Set(['sign-in', 'forgot-password']);
 
 function AuthGate() {
-  const { session, loading, isGuest, setGuestMode } = useSessionContext();
+  const { session, loading, isGuest, setGuestMode, needsPassword } = useSessionContext();
   const segments = useSegments();
   const router = useRouter();
   const params = useGlobalSearchParams<{ confirmed?: string; reset?: string }>();
@@ -73,6 +84,24 @@ function AuthGate() {
       }
     }
 
+    // Cổng đặt mật khẩu — trước mọi màn khác, kể cả deep link /trip/... hay
+    // /join. needsPassword null = đang kiểm với máy chủ: chưa điều hướng gì.
+    if (session !== null) {
+      if (needsPassword === null) return;
+      if (needsPassword) {
+        if (!GATE_EXEMPT_SCREENS.has(screen)) router.replace('/set-password');
+        return;
+      }
+      if (screen === SET_PASSWORD_SCREEN) {
+        router.replace('/');
+        return;
+      }
+    } else if (screen === SET_PASSWORD_SCREEN) {
+      // Màn đặt mật khẩu cần phiên; hết phiên (bấm Huỷ đăng xuất) thì về đăng nhập.
+      router.replace('/sign-in');
+      return;
+    }
+
     if (!canUseApp && !PUBLIC_SCREENS.has(screen)) {
       router.replace('/sign-in');
     } else if (canUseApp && SIGNED_OUT_ONLY.has(screen)) {
@@ -82,11 +111,32 @@ function AuthGate() {
     }
     // setGuestMode cố ý không nằm trong deps: hàm được tạo lại mỗi render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [session, loading, isGuest, JSON.stringify(segments), router, fromEmailLink]);
+  }, [session, loading, isGuest, needsPassword, JSON.stringify(segments), router, fromEmailLink]);
 
   // Mọi màn hình tự vẽ header bằng AppHeader để giữ màu trong một bảng token
   // duy nhất, nên tắt header mặc định của Stack.
-  return <Stack screenOptions={{ headerShown: false }} />;
+  return (
+    // View flex-1 là khung định vị cho lớp che — không trông vào cấu trúc ẩn
+    // mà expo-router dựng bên ngoài.
+    <View className="flex-1">
+      <Stack screenOptions={{ headerShown: false }} />
+      {/* Che màn bên dưới khi đang hỏi máy chủ "đã có mật khẩu chưa", hoặc
+          đã biết phải đặt mật khẩu mà màn hiện tại chưa phải màn đặt mật khẩu
+          (effect của màn con chạy trước AuthGate — không che thì màn đích chớp
+          lên). Tài khoản chỉ dùng mật khẩu qua bước kiểm không gọi mạng. */}
+      {session !== null &&
+      (needsPassword === null ||
+        (needsPassword && !GATE_EXEMPT_SCREENS.has(segments[0] ?? ''))) ? (
+        <View
+          accessibilityViewIsModal
+          importantForAccessibility="yes"
+          accessibilityLabel="Đang kiểm tra tài khoản"
+          className="absolute inset-0 items-center justify-center bg-background">
+          <ActivityIndicator />
+        </View>
+      ) : null}
+    </View>
+  );
 }
 
 /**

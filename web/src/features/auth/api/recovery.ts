@@ -1,5 +1,10 @@
 import type { AuthRedirect } from '@core/features/auth/auth-redirect';
-import { describeRedirectError, parseAuthRedirect } from '@core/features/auth/auth-redirect';
+import {
+  describeOAuthError,
+  describeRedirectError,
+  isOAuthCancellation,
+  parseAuthRedirect,
+} from '@core/features/auth/auth-redirect';
 
 import { supabase } from '@/shared/api';
 import { DataError } from '@/shared/lib/async';
@@ -63,6 +68,15 @@ export async function verifyPasswordRecovery(): Promise<void> {
   throw new DataError(
     'Link đặt lại mật khẩu không hợp lệ hoặc đã hết hạn. Hãy yêu cầu gửi lại email mới.',
   );
+}
+
+/**
+ * Lỗi khi quay về từ Google (?oauth=1&error=…) — null nếu không có lỗi hoặc
+ * người dùng tự bấm Huỷ ở Google. Câu có sẵn, không bao giờ error_description.
+ */
+export function initialOAuthError(): string | null {
+  if (!initialRedirect?.errorCode || isOAuthCancellation(initialRedirect)) return null;
+  return describeOAuthError(initialRedirect);
 }
 
 /** Lỗi gắn trên URL khi quay về từ link xác nhận đăng ký (?confirmed=1&error=…). */

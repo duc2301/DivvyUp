@@ -45,7 +45,9 @@ DivvyUp giúp một nhóm bạn ghi lại mọi khoản chi trong chuyến đi v
 - Chạm vào để xem chi tiết: nhiệt độ theo giờ, dự báo cả tuần, giờ mặt trời mọc và lặn, chỉ số UV, chất lượng không khí.
 
 ### ✨ Và
-- Đăng ký bằng email, ghi nhớ đăng nhập, lấy lại mật khẩu khi quên.
+- Đăng ký bằng email, hoặc **đăng nhập bằng Google** — bấm một nút, không cần nhớ mật khẩu.
+- Đăng nhập Google bằng email đã có tài khoản thì tự vào đúng tài khoản đó, giữ nguyên chuyến đi và bạn bè cũ. Email mới thì phải **đặt mật khẩu** một lần cho tài khoản; bấm huỷ ở bước này thì lần sau đăng nhập Google sẽ được mời đặt lại. Sau đó đăng nhập được bằng cả Google và email/mật khẩu.
+- Ghi nhớ đăng nhập, lấy lại mật khẩu khi quên.
 - Có thể **dùng ngay không cần tài khoản**. Khi đó dữ liệu chỉ lưu trên điện thoại của bạn.
 - Giao diện sáng và tối, hoàn toàn bằng tiếng Việt.
 

@@ -7,6 +7,7 @@ export const routes = {
   signIn: () => '/sign-in',
   forgotPassword: () => '/forgot-password',
   resetPassword: () => '/reset-password',
+  setPassword: () => '/set-password',
   profile: () => '/profile',
   archive: () => '/archive',
   tripNew: () => '/trips/new',

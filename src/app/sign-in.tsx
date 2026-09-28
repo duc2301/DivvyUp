@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
-import { Pressable, Text, View } from 'react-native';
+import { Platform, Pressable, Text, View } from 'react-native';
 
 import { BrandLockup } from '@/components/ui/brand';
 import { Button } from '@/components/ui/button';
@@ -13,11 +13,17 @@ import { ThemeToggle } from '@/components/ui/theme-toggle';
 import {
   AuthRateLimitError,
   EMAIL_RESEND_COOLDOWN_SECONDS,
+  exchangeOAuthCode,
   resendSignUpConfirmation,
+  signInWithGoogle,
   signInWithPassword,
   signUpWithPassword,
 } from '@/features/auth/auth-actions';
-import { describeRedirectError } from '@/features/auth/auth-redirect';
+import {
+  describeOAuthError,
+  describeRedirectError,
+  isOAuthCancellation,
+} from '@/features/auth/auth-redirect';
 import { useSessionContext } from '@/features/auth/session-context';
 import { useAuthRedirect } from '@/features/auth/use-auth-redirect';
 import { useCooldown } from '@/features/auth/use-cooldown';
@@ -37,7 +43,12 @@ function firstParam(value: string | string[] | undefined): string | undefined {
 
 export default function SignInScreen() {
   const router = useRouter();
-  const params = useLocalSearchParams<{ confirmed?: string; reset?: string }>();
+  const params = useLocalSearchParams<{
+    confirmed?: string;
+    reset?: string;
+    oauth?: string;
+    google?: string;
+  }>();
   const redirect = useAuthRedirect();
   const { setGuestMode } = useSessionContext();
 
@@ -47,6 +58,7 @@ export default function SignInScreen() {
   const [displayName, setDisplayName] = useState('');
   const [remember, setRemember] = useState(true);
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<Banner>(null);
   // Email vừa đăng ký nhưng chưa xác nhận — có giá trị thì hiện nút gửi lại.
@@ -97,6 +109,53 @@ export default function SignInScreen() {
     }
   }, [confirmed, resetDone, resetParam, redirect]);
 
+  // Quay về từ Google qua deep link mà openAuthSessionAsync không trả 'success'
+  // (Android có máy đóng tab trả 'dismiss', hoặc hệ điều hành giết app giữa
+  // chừng): màn này tự đổi mã. exchangeOAuthCode bỏ qua mã đã đổi.
+  const fromOAuth = firstParam(params.oauth) === '1';
+  const cancelledGoogle = firstParam(params.google) === 'cancelled';
+  useEffect(() => {
+    if (cancelledGoogle) {
+      setBanner({
+        tone: 'info',
+        message:
+          'Đã huỷ tạo tài khoản. Lần sau đăng nhập bằng Google, bạn sẽ được mời đặt mật khẩu lại.',
+      });
+    }
+  }, [cancelledGoogle]);
+  useEffect(() => {
+    if (!fromOAuth || !redirect) return;
+    if (redirect.errorCode) {
+      // Bấm Huỷ ở màn đồng ý của Google → không phải lỗi.
+      if (!isOAuthCancellation(redirect)) setError(describeOAuthError(redirect));
+      return;
+    }
+    if (!redirect.code) return;
+    // Hiện trạng thái bận trong lúc đổi mã: Android trả 'dismiss' làm nút Google
+    // hết quay trong khi mã vẫn đang được đổi — người dùng dễ bấm lần nữa.
+    setGoogleBusy(true);
+    exchangeOAuthCode(redirect.code, redirect.flowId)
+      .catch((caught: unknown) => {
+        setError(describeError(caught));
+      })
+      .finally(() => setGoogleBusy(false));
+  }, [fromOAuth, redirect]);
+
+  const google = async (): Promise<void> => {
+    setGoogleBusy(true);
+    setError(null);
+    setBanner(null);
+    try {
+      await signInWithGoogle(remember);
+      // 'signed-in': AuthGate tự đưa vào app hoặc tới màn đặt mật khẩu.
+      // 'cancelled': người dùng tự đóng — không báo gì.
+    } catch (caught) {
+      setError(describeError(caught));
+    } finally {
+      setGoogleBusy(false);
+    }
+  };
+
   const handleFailure = (caught: unknown): void => {
     if (caught instanceof AuthRateLimitError) startCooldown(caught.retryAfterSeconds);
     if (caught instanceof DataError && caught.code === 'email_not_confirmed') {
@@ -114,8 +173,20 @@ export default function SignInScreen() {
         await signInWithPassword(email, password, remember);
         // Không cần điều hướng: AuthGate thấy session đổi sẽ tự đưa về trang chủ.
       } else {
-        const { needsEmailConfirmation } = await signUpWithPassword(email, password, displayName);
-        if (needsEmailConfirmation) {
+        const { needsEmailConfirmation, alreadyRegistered } = await signUpWithPassword(
+          email,
+          password,
+          displayName,
+        );
+        if (alreadyRegistered) {
+          setMode('signIn');
+          setPassword('');
+          setBanner({
+            tone: 'info',
+            message:
+              'Email này đã có tài khoản. Hãy đăng nhập — bằng Google nếu bạn từng dùng Google, hoặc bấm "Quên mật khẩu?".',
+          });
+        } else if (needsEmailConfirmation) {
           const sentTo = email.trim();
           setPendingEmail(sentTo);
           startCooldown(EMAIL_RESEND_COOLDOWN_SECONDS);
@@ -215,7 +286,7 @@ export default function SignInScreen() {
         autoCapitalize="none"
         autoComplete={mode === 'signIn' ? 'current-password' : 'new-password'}
         onSubmitEditing={() => {
-          if (canSubmit && !busy) void submit();
+          if (canSubmit && !busy && !googleBusy) void submit();
         }}
       />
 
@@ -257,9 +328,27 @@ export default function SignInScreen() {
               : 'Tạo tài khoản'
         }
         onPress={() => void submit()}
-        disabled={!canSubmit}
+        disabled={!canSubmit || googleBusy}
         busy={busy}
       />
+
+      {/* Bản web thật là web/ — Expo web của mobile không có luồng Google. */}
+      {Platform.OS === 'web' ? null : (
+        <>
+          <View className="flex-row items-center gap-3">
+            <View className="h-px flex-1 bg-border" />
+            <Text className="text-xs text-muted-foreground">hoặc</Text>
+            <View className="h-px flex-1 bg-border" />
+          </View>
+          <Button
+            label="Tiếp tục với Google"
+            variant="secondary"
+            onPress={() => void google()}
+            disabled={busy}
+            busy={googleBusy}
+          />
+        </>
+      )}
 
       {pendingEmail !== null && mode === 'signIn' ? (
         <Button

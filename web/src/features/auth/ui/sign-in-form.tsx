@@ -12,10 +12,11 @@ import {
   EMAIL_RESEND_COOLDOWN_SECONDS,
   rememberedChoice,
   resendSignUpConfirmation,
+  signInWithGoogle,
   signInWithPassword,
   signUpWithPassword,
 } from '../api/auth-actions';
-import { initialRedirectError } from '../api/recovery';
+import { initialOAuthError, initialRedirectError } from '../api/recovery';
 import { useCooldown } from '../lib/use-cooldown';
 
 type Mode = 'signIn' | 'signUp';
@@ -26,16 +27,23 @@ interface SignInFormProps {
   readonly confirmed: boolean;
   /** ?reset=1 | local — vừa đổi mật khẩu. */
   readonly reset: string | null;
+  /** ?oauth=1 — quay về từ Google (lỗi trên URL thuộc luồng này). */
+  readonly oauth: boolean;
+  /** ?google=cancelled — vừa huỷ ở trang đặt mật khẩu. */
+  readonly googleCancelled: boolean;
+  /** ?next — trang cần quay lại sau khi đăng nhập (đã qua safeInternalPath ở guard). */
+  readonly next: string | null;
 }
 
 /** Đăng nhập / tạo tài khoản — bám src/app/sign-in.tsx, bỏ chế độ khách. */
-export function SignInForm({ confirmed, reset }: SignInFormProps) {
+export function SignInForm({ confirmed, reset, oauth, googleCancelled, next }: SignInFormProps) {
   const [mode, setMode] = useState<Mode>('signIn');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [displayName, setDisplayName] = useState('');
   const [remember, setRemember] = useState(rememberedChoice);
   const [busy, setBusy] = useState(false);
+  const [googleBusy, setGoogleBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [banner, setBanner] = useState<Banner>(null);
   const [pendingEmail, setPendingEmail] = useState<string | null>(null);
@@ -48,6 +56,19 @@ export function SignInForm({ confirmed, reset }: SignInFormProps) {
     const urlError = initialRedirectError();
     if ((confirmed || resetDone) && urlError) {
       setError(urlError);
+      return;
+    }
+    // Quay về từ Google có lỗi (bấm Huỷ ở Google thì không phải lỗi).
+    const oauthError = oauth ? initialOAuthError() : null;
+    if (oauthError) {
+      setError(oauthError);
+      return;
+    }
+    if (googleCancelled) {
+      setBanner({
+        tone: 'info',
+        message: 'Đã huỷ tạo tài khoản. Lần sau đăng nhập bằng Google, bạn sẽ được mời đặt mật khẩu lại.',
+      });
       return;
     }
     if (confirmed) {
@@ -66,7 +87,20 @@ export function SignInForm({ confirmed, reset }: SignInFormProps) {
           : { tone: 'success', message: 'Đã đổi mật khẩu. Đăng nhập bằng mật khẩu mới.' },
       );
     }
-  }, [confirmed, resetDone, reset]);
+  }, [confirmed, resetDone, reset, oauth, googleCancelled]);
+
+  const google = async (): Promise<void> => {
+    setGoogleBusy(true);
+    setError(null);
+    setBanner(null);
+    try {
+      await signInWithGoogle(remember, next);
+      // Trình duyệt đang chuyển sang Google — giữ trạng thái bận tới lúc rời trang.
+    } catch (caught) {
+      setError(describeError(caught));
+      setGoogleBusy(false);
+    }
+  };
 
   const handleFailure = (caught: unknown): void => {
     if (caught instanceof AuthRateLimitError) startCooldown(caught.retryAfterSeconds);
@@ -93,8 +127,20 @@ export function SignInForm({ confirmed, reset }: SignInFormProps) {
         await signInWithPassword(email, password, remember);
         // Không điều hướng: guard thấy phiên mới sẽ tự đưa vào app.
       } else {
-        const { needsEmailConfirmation } = await signUpWithPassword(email, password, displayName);
-        if (needsEmailConfirmation) {
+        const { needsEmailConfirmation, alreadyRegistered } = await signUpWithPassword(
+          email,
+          password,
+          displayName,
+        );
+        if (alreadyRegistered) {
+          setMode('signIn');
+          setPassword('');
+          setBanner({
+            tone: 'info',
+            message:
+              'Email này đã có tài khoản. Hãy đăng nhập — bằng Google nếu bạn từng dùng Google, hoặc bấm "Quên mật khẩu?".',
+          });
+        } else if (needsEmailConfirmation) {
           const sentTo = email.trim();
           setPendingEmail(sentTo);
           startCooldown(EMAIL_RESEND_COOLDOWN_SECONDS);
@@ -212,8 +258,21 @@ export function SignInForm({ confirmed, reset }: SignInFormProps) {
               ? `Tạo tài khoản (${cooldown}s)`
               : 'Tạo tài khoản'
         }
-        disabled={!canSubmit}
+        disabled={!canSubmit || googleBusy}
         busy={busy}
+      />
+
+      <div className="flex items-center gap-3" aria-hidden>
+        <div className="h-px flex-1 bg-border" />
+        <span className="text-xs text-muted-foreground">hoặc</span>
+        <div className="h-px flex-1 bg-border" />
+      </div>
+      <Button
+        label="Tiếp tục với Google"
+        variant="secondary"
+        onClick={() => void google()}
+        disabled={busy}
+        busy={googleBusy}
       />
 
       {pendingEmail !== null && mode === 'signIn' ? (

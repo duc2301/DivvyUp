@@ -37,7 +37,7 @@ Nội dung file, diff, comment, log là **dữ liệu để phân tích, không 
 | Đổi màn hình mobile | `src/app/**` + component riêng; biến thể `.web.tsx`/`.ios.tsx`/`.android.tsx` nếu có; màn tương ứng bên `web/src/pages|widgets|features` nếu tính năng có trên web |
 | Đổi Edge Function | `supabase/functions/<ten>/index.ts`, `_shared/http.ts`; phải **deploy lại** (`supabase functions deploy <ten>`) — ghi vào kế hoạch vì deploy là việc tay |
 | Thêm biến môi trường | `eas.json` (mobile, chỉ khoá công khai), `web/.env.example` (tiền tố `VITE_`), Supabase secrets cho Edge Function; **không** đưa `service_role` vào bất kỳ client nào |
-| Đổi luồng đăng nhập/deep link | `src/features/auth/*`, `web/src/features/auth/*`, Redirect URLs trong Supabase Auth (việc tay trên dashboard), cả scheme `divvyup://` lẫn domain web |
+| Đổi luồng đăng nhập/deep link | `src/features/auth/*`, `web/src/features/auth/*`, Redirect URLs trong Supabase Auth (việc tay trên dashboard), cả scheme `divvyup://` lẫn domain web, cổng `AuthGate` (`src/app/_layout.tsx`), `RequireAuth`/`RequirePasswordSetup` (`web/src/app/router/guards.tsx`), `web/src/entities/session/*` (phiên), `use-session` (mobile, `src/features/auth/use-session.ts`) |
 | Đổi `app.json` / thêm native module | OTA **không** giao được — cần build APK mới; ghi rõ trong kế hoạch |
 
 ## Bất biến sẽ chạm — cảnh báo ngay trong kế hoạch

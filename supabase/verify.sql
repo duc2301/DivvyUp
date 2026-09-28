@@ -294,3 +294,53 @@ select id as chuyen_da_xoa_mem, name, deleted_at
 from public.trips
 where deleted_at is not null
 order by deleted_at desc;
+
+
+-- 23. Migration 20260928_1000 — mong đợi 0 dòng:
+--     - account_needs_password mở cho anon, hoặc có bản nhận tham số (hỏi được
+--       về người khác);
+--     - authenticated MẤT quyền gọi: app hiểu lỗi là "không cần mật khẩu" (cổng
+--       mở, không chặn nhầm) → người mới qua Google vào thẳng app, không ai biết;
+--     - handle_new_user còn bản cũ (quên chạy migration): tên Google > 80 ký tự
+--       làm hỏng việc tạo tài khoản ("Database error saving new user").
+select p.oid::regprocedure::text as van_de
+from pg_proc p
+join pg_namespace n on n.oid = p.pronamespace
+where n.nspname = 'public'
+  and p.proname = 'account_needs_password'
+  and (has_function_privilege('anon', p.oid, 'execute')
+       or not has_function_privilege('authenticated', p.oid, 'execute')
+       or p.pronargs <> 0)
+union all
+select 'thiếu public.account_needs_password()'
+where to_regprocedure('public.account_needs_password()') is null
+union all
+select 'handle_new_user chưa lấy tên Google — chạy migration 20260928_1000'
+where pg_get_functiondef('public.handle_new_user()'::regprocedure) not like '%full_name%';
+
+
+-- 24. Tên hiển thị ngoài khoảng 1–80 ký tự (handle_new_user cắt tên Google còn
+--     80). CHECK của bảng vốn chặn; truy vấn này bắt trường hợp CHECK bị gỡ.
+--     Mong đợi 0 dòng.
+select id as ho_so_ten_sai, char_length(display_name) as so_ky_tu
+from public.profiles
+where char_length(display_name) not between 1 and 80;
+
+
+-- 25. KIỂM TAY đăng nhập Google (TC-1, TC-10). Không tự chạy được — thay email
+--     rồi chạy TRƯỚC và SAU khi đăng nhập Google bằng email đó:
+--       - TC-1 (tài khoản đã xác nhận): 1 dòng, cùng id trước/sau; providers
+--         có cả 'email' và 'google'; co_mat_khau vẫn true.
+--       - TC-10 (tài khoản CHƯA xác nhận): 1 dòng, cùng id trước/sau;
+--         co_mat_khau = false sau khi đăng nhập Google (GoTrue xoá mật khẩu cũ)
+--         → app đưa vào màn Đặt mật khẩu.
+-- select u.id, u.email, u.email_confirmed_at,
+--        coalesce(u.encrypted_password, '') <> '' as co_mat_khau,
+--        array_agg(i.provider order by i.provider) as providers
+-- from auth.users u
+-- left join auth.identities i on i.user_id = u.id
+-- where lower(u.email) = lower('email-thu@vidu.com')
+-- group by u.id;
+--
+-- TC-8 (tên Google > 80 ký tự) — thử công thức trên chuỗi, không cần tạo user:
+-- select char_length(left(coalesce(nullif(trim(repeat('Nguyễn ', 20)), ''), 'x'), 80));  -- = 80

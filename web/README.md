@@ -39,10 +39,14 @@ npm run preview
 6. Supabase → Authentication → URL Configuration → **Redirect URLs**: thêm
    `https://divvyup.vn/**`. Thiếu bước này thì link xác nhận email / đặt lại mật
    khẩu rơi về Site URL.
-   **Tuyệt đối không thêm `https://*.vercel.app/**`**: ai cũng tạo được một site
-   `*.vercel.app`, gọi "quên mật khẩu" cho email của nạn nhân với redirectTo trỏ về
-   site đó và nhận mã đổi phiên → chiếm tài khoản. Cần preview thì chỉ thêm đúng
-   pattern của project mình, ví dụ `https://divvyup-web-*-<team>.vercel.app/**`.
+   **Tuyệt đối không thêm bất kỳ URL `*.vercel.app` nào** — kể cả pattern "của
+   riêng mình" kiểu `https://divvyup-web-*-<team>.vercel.app/**`: `*` của Supabase
+   vượt được dấu `-`, nên site preview của một team khác tên `evil-<team>` cũng
+   khớp. Có đăng nhập Google, kẻ tấn công chỉ cần gửi nạn nhân một link authorize
+   với redirect_to trỏ về site của hắn và PKCE của hắn: nạn nhân chọn tài khoản
+   Google là hắn đổi được mã ra phiên. Preview Vercel chỉ dùng với một project
+   Supabase RIÊNG cho dev, không bao giờ với production. Danh sách đầy đủ ở
+   `docs/DEVELOPMENT.md` mục Auth.
 7. CSP trong `vercel.json` chỉ cho gọi Supabase của project này và các host ảnh
    trong allowlist của trigger `trips_validate_cover`. Đổi project Supabase hoặc
    thêm nguồn ảnh thì sửa cả hai nơi.

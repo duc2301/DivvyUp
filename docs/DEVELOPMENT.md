@@ -80,15 +80,20 @@ npx supabase functions deploy place-photos
 
 ### 3. Auth
 
-**Authentication → URL Configuration → Redirect URLs.** Thêm đủ các dòng sau, kể cả `**`:
+**Authentication → URL Configuration → Redirect URLs.** Trên project production chỉ để đúng hai dòng, kể cả `**`:
 
 ```
 divvyup://**
-exp://**
-http://localhost:8081/**
+https://divvyup.vn/**
 ```
 
-Thiếu dòng này thì bấm link trong email xác nhận hoặc đặt lại mật khẩu sẽ ra trang trắng, không quay về app.
+Thiếu dòng nào thì bấm link trong email (xác nhận, đặt lại mật khẩu) hoặc đăng nhập Google sẽ không quay về app/web. **Site URL** (cùng trang) đặt là `https://divvyup.vn` — Supabase chuyển về đây khi `redirect_to` không nằm trong danh sách; để mặc định `localhost:3000` thì người dùng rơi vào trang trắng.
+
+> **KHÔNG thêm `exp://**`, `http://localhost:*/**` hay `*.vercel.app/**` vào project production.** Có đăng nhập Google, kẻ tấn công chỉ cần gửi nạn nhân một link `…/auth/v1/authorize?provider=google&redirect_to=exp://<máy của hắn>/…` kèm PKCE của hắn: nạn nhân chọn tài khoản Google, mã đăng nhập chạy về Expo Go đang nạp project của hắn, hắn đổi mã ra phiên của nạn nhân. Chạy dev bằng Expo Go thì thêm đúng một dòng `exp://<IP-LAN>:8081/**` lúc thử rồi **gỡ ngay**, hoặc dùng một project Supabase riêng cho dev.
+
+**Authentication → Providers → Google** (đăng nhập Google): bật, dán Client ID và Client Secret của OAuth client loại **Web application** tạo ở Google Cloud Console (Authorized redirect URI: `https://<project-ref>.supabase.co/auth/v1/callback`). OAuth consent screen phải ở trạng thái **In production** — để "Testing" thì chỉ người trong danh sách thử đăng nhập được. Secret chỉ nằm trên dashboard, không vào repo.
+
+**Authentication → Sign In / Providers → Email:** "Confirm email" phải **BẬT**. Liên kết Google theo email chỉ an toàn khi bật: tắt thì ai đăng ký trước bằng email của người khác sẽ giữ được mật khẩu sau khi chủ thật liên kết Google (chiếm tài khoản). Nên bật thêm "Secure password change".
 
 **Authentication → Emails → SMTP Settings.** Bật SMTP riêng (Gmail app password, Resend, Brevo…). Máy chủ email mặc định của Supabase chỉ gửi được vài email mỗi giờ cho cả project, người dùng sẽ gặp lỗi *email rate limit exceeded*. Sau đó nới **Authentication → Rate Limits → emails**.
 

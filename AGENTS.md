@@ -80,6 +80,8 @@ Hai luật chống trôi:
 * **React Compiler đang bật**: không thêm `useMemo`/`useCallback` thủ công nếu chỉ để tối ưu. Nhưng phải giữ quy tắc của hooks thật nghiêm — compiler sẽ bỏ qua (bail out) component vi phạm mà không báo lỗi.
 * **Reanimated 4**: code trong worklet không được đụng state React hay biến ngoài chưa capture đúng. Animation phải chạy trên UI thread; rơi về JS thread là lỗi hiệu năng.
 * Component riêng của một feature thì đặt cùng thư mục feature, không nhét hết vào `src/components`.
+* **Cổng đặt mật khẩu (đăng nhập Google với tài khoản chưa có mật khẩu):** lõi thuần ở `src/lib/auth/password-gate.ts`, dữ liệu ở `src/lib/data/account.ts`. Chặn ở `src/app/_layout.tsx` (`AuthGate`, mobile) và `web/src/app/router/guards.tsx` (`RequireAuth`/`RequirePasswordSetup`, web) — chặn **trước** mọi màn khác, kể cả deep link `/trips`, `/join`.
+* **Không thêm `expo-web-browser` vào `plugins` trong `app.json`.** Đăng nhập Google trên mobile dùng `expo-web-browser` đã có sẵn trong APK nhưng không khai trong `plugins` — thêm vào đó đổi fingerprint native, buộc phải build APK mới thay vì giao qua OTA.
 
 ---
 

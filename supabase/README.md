@@ -41,8 +41,9 @@ Chạy **đúng thứ tự**, mỗi file một lần, trong SQL Editor của das
 | 11 | `migrations/20260917_1100_profile_payment_settled.sql` | ảnh đại diện, mã QR nhận tiền (Storage), khoản chi "đã xong" |
 | 12 | `migrations/20260925_1000_trip_collab_notes_history.sql` | thành viên sửa chuyến qua RPC, khoá `join_code`/`created_by`/`currency`, bảng `trip_notes`, nhật ký `expense_events`, bỏ policy UPDATE của `expenses` |
 | 13 | `migrations/20260926_1000_trip_archives_lock_deletes.sql` | bảng `trip_archives` (lưu trữ chuyến đi riêng từng người), chặn xoá chuyến qua trigger `trips_guard_identity` (cả deleted_at), bỏ policy UPDATE của `trips`, bỏ policy INSERT/UPDATE của `settlements`. **Không chạy lại migration 12 sau file này** — nó ghi đè `guard_trip_identity_columns` bằng bản chưa chặn `deleted_at` |
+| 14 | `migrations/20260928_1000_google_sign_in.sql` | đăng nhập Google: RPC `account_needs_password()` (cổng "Đặt mật khẩu" cho người mới tạo qua Google), `handle_new_user` lấy tên Google (`full_name`/`name`), cắt 80 ký tự |
 
-Xong thì chạy `verify.sql` — **22 truy vấn, mục 1–21 phải trả về 0 dòng** (mục 22 chỉ để soát thủ công, không bắt buộc 0 dòng).
+Xong thì chạy `verify.sql` — **mục 1–18, 20, 21, 23, 24 phải trả về 0 dòng**. Mục 19 và 22 chỉ để soát thủ công (không bắt buộc 0 dòng); mục 25 là checklist kiểm tay đăng nhập Google (câu lệnh để trong comment).
 
 ## Những quyết định đáng nhớ
 

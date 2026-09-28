@@ -12,13 +12,14 @@ import { NotesPage } from '@/pages/notes';
 import { PlacePage } from '@/pages/place';
 import { ProfilePage } from '@/pages/profile';
 import { ResetPasswordPage } from '@/pages/reset-password';
+import { SetPasswordPage } from '@/pages/set-password';
 import { SignInPage } from '@/pages/sign-in';
 import { TripPage } from '@/pages/trip';
 import { TripEditPage } from '@/pages/trip-edit';
 import { TripNewPage } from '@/pages/trip-new';
 import { TripsPage } from '@/pages/trips';
 
-import { GuestOnly, RequireAuth } from './guards';
+import { GuestOnly, RequireAuth, RequirePasswordSetup } from './guards';
 
 /** Đường dẫn khớp routes trong shared/config/routes.ts. */
 export const router = createBrowserRouter([
@@ -28,6 +29,10 @@ export const router = createBrowserRouter([
       { path: '/sign-in', element: <SignInPage /> },
       { path: '/forgot-password', element: <ForgotPasswordPage /> },
     ],
+  },
+  {
+    element: <RequirePasswordSetup />,
+    children: [{ path: '/set-password', element: <SetPasswordPage /> }],
   },
   // Không chặn: link đặt lại mật khẩu mở ra với phiên khôi phục tạm.
   { path: '/reset-password', element: <ResetPasswordPage /> },

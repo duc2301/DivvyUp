@@ -13,16 +13,39 @@ function FullScreenLoading() {
   );
 }
 
-/** Bắt buộc đăng nhập (web không có chế độ khách). Giữ đích để quay lại sau khi đăng nhập. */
+function nextQuery(pathname: string, search: string): string {
+  const next = `${pathname}${search}`;
+  return next === '/' ? '' : `?next=${encodeURIComponent(next)}`;
+}
+
+/**
+ * Bắt buộc đăng nhập (web không có chế độ khách) VÀ đã có mật khẩu: tài khoản
+ * mới qua Google bị giữ ở /set-password trước mọi trang, kể cả link mời. Giữ
+ * đích để quay lại sau.
+ */
 export function RequireAuth() {
-  const { loading, session } = useSession();
+  const { loading, session, needsPassword } = useSession();
   const location = useLocation();
   if (loading) return <FullScreenLoading />;
   if (!session) {
-    const next = `${location.pathname}${location.search}`;
-    const query = next === '/' ? '' : `?next=${encodeURIComponent(next)}`;
-    return <Navigate to={`${routes.signIn()}${query}`} replace />;
+    return <Navigate to={`${routes.signIn()}${nextQuery(location.pathname, location.search)}`} replace />;
   }
+  // Đang hỏi máy chủ — chưa vẽ trang, kẻo lộ nội dung trước khi cổng kịp chặn.
+  if (needsPassword === null) return <FullScreenLoading />;
+  if (needsPassword) {
+    return <Navigate to={`${routes.setPassword()}${nextQuery(location.pathname, location.search)}`} replace />;
+  }
+  return <Outlet />;
+}
+
+/** Trang /set-password: cần phiên; đã có mật khẩu thì vào app (về ?next). */
+export function RequirePasswordSetup() {
+  const { loading, session, needsPassword } = useSession();
+  const [params] = useSearchParams();
+  if (loading) return <FullScreenLoading />;
+  if (!session) return <Navigate to={routes.signIn()} replace />;
+  if (needsPassword === null) return <FullScreenLoading />;
+  if (!needsPassword) return <Navigate to={safeInternalPath(params.get('next'))} replace />;
   return <Outlet />;
 }
 

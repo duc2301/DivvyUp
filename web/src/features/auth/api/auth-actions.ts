@@ -1,5 +1,7 @@
 import type { AuthError } from '@supabase/supabase-js';
 
+import { isExistingAccountSignUp } from '@core/lib/auth/password-gate';
+
 import { getRememberSession, setRememberSession, supabase } from '@/shared/api';
 import { DataError } from '@/shared/lib/async';
 import { absoluteUrl, routes } from '@/shared/config';
@@ -77,6 +79,24 @@ export function toAuthDataError(error: AuthError): DataError {
   if (code === 'session_not_found' || code === 'session_expired' || lower.includes('auth session missing')) {
     return new DataError('Phiên đặt lại mật khẩu đã hết hạn. Hãy yêu cầu gửi lại email mới.', code);
   }
+  if (code === 'provider_email_needs_verification') {
+    return new DataError(
+      'Email Google của bạn chưa được xác minh. Kiểm tra hộp thư để xác minh rồi thử lại.',
+      code,
+    );
+  }
+  if (code === 'validation_failed' && lower.includes('provider is not enabled')) {
+    return new DataError('Đăng nhập Google chưa được bật trên hệ thống. Hãy dùng email và mật khẩu.', code);
+  }
+  if (code === 'reauthentication_needed') {
+    return new DataError(
+      'Phiên đăng nhập đã lâu. Đăng xuất rồi đăng nhập lại bằng Google, sau đó đặt mật khẩu ngay.',
+      code,
+    );
+  }
+  if (code === 'identity_already_exists') {
+    return new DataError('Tài khoản Google này đã gắn với một tài khoản khác.', code);
+  }
   if (lower.includes('error sending')) {
     return new DataError('Máy chủ không gửi được email. Thử lại sau ít phút.', code);
   }
@@ -110,7 +130,7 @@ export async function signUpWithPassword(
   email: string,
   password: string,
   displayName: string,
-): Promise<{ needsEmailConfirmation: boolean }> {
+): Promise<{ needsEmailConfirmation: boolean; alreadyRegistered: boolean }> {
   const name = displayName.trim();
   if (name === '') throw new DataError('Hãy nhập tên hiển thị.');
   const { data, error } = await supabase.auth.signUp({
@@ -119,7 +139,10 @@ export async function signUpWithPassword(
     options: { data: { display_name: name }, emailRedirectTo: confirmRedirect() },
   });
   if (error) throw toAuthDataError(error);
-  return { needsEmailConfirmation: data.session === null };
+  // Email đã có tài khoản (kể cả tạo qua Google): Supabase trả "thành công" giả
+  // để không ai dò được email — identities rỗng, KHÔNG gửi email nào.
+  if (isExistingAccountSignUp(data.user)) return { needsEmailConfirmation: false, alreadyRegistered: true };
+  return { needsEmailConfirmation: data.session === null, alreadyRegistered: false };
 }
 
 export async function resendSignUpConfirmation(email: string): Promise<void> {
@@ -152,6 +175,39 @@ export async function completePasswordReset(
     return { otherDevicesSignedOut: false };
   }
   return { otherDevicesSignedOut: true };
+}
+
+/**
+ * Đăng nhập (hoặc tạo tài khoản) bằng Google — chuyển cả trang sang Google rồi
+ * quay về /sign-in?oauth=1. Client bật detectSessionInUrl nên supabase-js tự đổi
+ * ?code ra phiên khi trang tải lại; guard GuestOnly đưa về `next` (giữ link mời
+ * /join?code=… qua vòng đăng nhập). Liên kết tài khoản cùng email do Supabase tự
+ * làm; người mới chưa có mật khẩu → guard đưa tới /set-password.
+ *
+ * Trang đích phải có trong Redirect URLs của Supabase (https://divvyup.vn/**).
+ */
+export async function signInWithGoogle(remember: boolean, next: string | null): Promise<void> {
+  setRememberSession(remember);
+  const query = new URLSearchParams({ oauth: '1' });
+  if (next) query.set('next', next);
+  const { error } = await supabase.auth.signInWithOAuth({
+    provider: 'google',
+    options: {
+      redirectTo: absoluteUrl(`${routes.signIn()}?${query.toString()}`),
+      // Luôn hiện bộ chọn tài khoản: người vừa huỷ ở trang đặt mật khẩu phải
+      // đổi được tài khoản Google.
+      queryParams: { prompt: 'select_account' },
+    },
+  });
+  if (error) throw toAuthDataError(error);
+  // Thành công: trình duyệt đang chuyển sang Google, trang này sắp bị thay.
+}
+
+/** Đặt mật khẩu lần đầu cho tài khoản tạo qua Google — KHÔNG đăng xuất. */
+export async function setInitialPassword(password: string): Promise<void> {
+  if (password.length < 6) throw new DataError('Mật khẩu phải có ít nhất 6 ký tự.');
+  const { error } = await supabase.auth.updateUser({ password });
+  if (error) throw toAuthDataError(error);
 }
 
 export async function signOut(): Promise<void> {
