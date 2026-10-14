@@ -1,0 +1,79 @@
+# Giữ project Supabase không bị tạm dừng.
+#
+# Gói Free của Supabase tự TẠM DỪNG project sau 7 ngày không có hoạt động —
+# app và web đều mất kết nối cho tới khi có người vào dashboard bấm Restore.
+# Workflow này gửi một truy vấn đọc thật vào Postgres mỗi ngày để project luôn
+# được tính là đang dùng.
+#
+# Truy vấn: GET /rest/v1/trips?select=id&limit=1 bằng anon key (anon key vốn đã
+# công khai trong bundle app, AGENTS.md §4.2). RLS chặn nên kết quả là [] — nhưng
+# Postgres vẫn phải chạy câu SELECT, đó chính là "hoạt động" cần có. Không đọc
+# được dữ liệu của ai, không ghi gì.
+#
+# Chạy mỗi ngày dù ngưỡng là 7 ngày: GitHub thỉnh thoảng bỏ lỡ lượt cron lúc tải
+# cao, chạy dày để vài lượt hỏng không đủ làm project ngủ.
+#
+# anon key dạng mới (sb_publishable_…) không phải JWT nhưng gửi được ở cả
+# apikey lẫn Authorization: Bearer — giống cách supabase-js gửi.
+#
+# Cần hai secret của repo (Settings → Secrets and variables → Actions):
+#   SUPABASE_URL       https://<project-ref>.supabase.co
+#   SUPABASE_ANON_KEY  anon/publishable key (cùng giá trị EXPO_PUBLIC_SUPABASE_KEY)
+# Thiếu secret thì job ĐỎ — không âm thầm "xanh" trong khi project sắp ngủ.
+#
+# Lưu ý: GitHub tự TẮT workflow theo lịch nếu repo không có commit nào trong 60
+# ngày. Khi đó vào tab Actions bật lại (GitHub có gửi email báo trước).
+name: Supabase keep-alive
+
+on:
+  schedule:
+    # 01:23 UTC mỗi ngày (08:23 giờ Việt Nam). Phút lẻ để tránh giờ chẵn GitHub
+    # dồn hàng đợi.
+    - cron: '23 1 * * *'
+  # Chạy tay từ tab Actions để kiểm secret ngay sau khi thêm.
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: supabase-keep-alive
+  cancel-in-progress: false
+
+jobs:
+  ping:
+    name: Ping Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Truy vấn đọc vào Postgres
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SUPABASE_URL}" ] || [ -z "${SUPABASE_ANON_KEY}" ]; then
+            echo "::error::Thiếu secret SUPABASE_URL hoặc SUPABASE_ANON_KEY — xem đầu file workflow."
+            exit 1
+          fi
+          url="${SUPABASE_URL%/}/rest/v1/trips?select=id&limit=1"
+          : > /tmp/body
+          # Thử lại vài lần: project vừa bị đánh thức hoặc mạng runner chập chờn.
+          for attempt in 1 2 3; do
+            status=$(curl --silent --show-error --output /tmp/body --write-out '%{http_code}' \
+              --max-time 30 \
+              --header "apikey: ${SUPABASE_ANON_KEY}" \
+              --header "Authorization: Bearer ${SUPABASE_ANON_KEY}" \
+              "$url" || true)
+            # curl tự in 000 khi lỗi kết nối — không nối thêm gì.
+            if [ "$status" = "200" ]; then
+              echo "Supabase trả 200 (lượt $attempt) — project đang thức."
+              exit 0
+            fi
+            echo "::warning::Lượt $attempt: HTTP $status"
+            if [ "$attempt" -lt 3 ]; then sleep 20; fi
+          done
+          # Không in body ra log nếu là lỗi xác thực — tránh lộ thông tin cấu hình;
+          # chỉ in mã lỗi PostgREST nếu có.
+          code=$(grep -o '"code":"[^"]*"' /tmp/body || true)
+          echo "::error::Không ping được Supabase sau 3 lượt (HTTP $status ${code}). Project có thể đã bị tạm dừng — vào dashboard bấm Restore, rồi kiểm secret."
+          exit 1

@@ -97,6 +97,21 @@ Thiếu dòng nào thì bấm link trong email (xác nhận, đặt lại mật 
 
 **Authentication → Emails → SMTP Settings.** Bật SMTP riêng (Gmail app password, Resend, Brevo…). Máy chủ email mặc định của Supabase chỉ gửi được vài email mỗi giờ cho cả project, người dùng sẽ gặp lỗi *email rate limit exceeded*. Sau đó nới **Authentication → Rate Limits → emails**.
 
+### 4. Chống tạm dừng (gói Free)
+
+Gói Free tự **tạm dừng** project sau 7 ngày không có hoạt động — app và web mất kết nối tới khi có người bấm **Restore** trên dashboard. Workflow `.github/workflows/supabase-keep-alive.yml` gửi một truy vấn đọc vào Postgres mỗi ngày (08:23 giờ VN) để project luôn thức. Truy vấn dùng anon key, RLS chặn nên chỉ nhận về `[]` — không đọc dữ liệu của ai, không ghi gì.
+
+Làm một lần: GitHub repo → **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Giá trị |
+|---|---|
+| `SUPABASE_URL` | `https://<project-ref>.supabase.co` |
+| `SUPABASE_ANON_KEY` | anon/publishable key — cùng giá trị `EXPO_PUBLIC_SUPABASE_KEY` |
+
+Rồi **Actions → Supabase keep-alive → Run workflow** để kiểm: xanh là xong. Thiếu secret hoặc project đã ngủ thì job **đỏ** (GitHub gửi email báo lỗi workflow).
+
+GitHub tự tắt workflow theo lịch khi repo 60 ngày không có commit — gặp thì vào tab Actions bật lại. Lên gói Pro thì không cần workflow này.
+
 ---
 
 ## Phát hành
@@ -182,7 +197,7 @@ web/
 supabase/
   migrations/          schema, RLS, RPC — chạy theo thứ tự
   functions/           Edge Functions (Deno)
-.github/workflows/     CI, OTA, build APK
+.github/workflows/     CI, OTA, build APK, giữ Supabase không bị tạm dừng
 ```
 
 Bản web (`web/`) không sao chép lại lõi tiền và tầng dữ liệu — nó import trực tiếp `src/lib/...` của app mobile qua alias `@core` (khai trong `web/vite.config.ts`), nên hai bản luôn ra cùng một kết quả. Web có client Supabase riêng (`web/src/...`), tách biệt với client của mobile, vì mỗi nền tảng đọc biến môi trường khác nhau (`EXPO_PUBLIC_*` so với `VITE_*`).
