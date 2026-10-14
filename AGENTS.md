@@ -142,6 +142,8 @@ Hook (`.claude/hooks/*.mjs`, gắn trong `.claude/settings.json`, áp cho cả B
 - `nhac-soat-bat-bien.mjs` — chặn `git commit` đụng `src/lib/{money,data,storage}`, `supabase/`, `web/src/shared/api/` tới khi `invariant-guard` đã soát; lối ra `INVARIANT_REVIEWED=1 git commit`. `git add` và `git commit` phải là hai lệnh riêng.
 - `nhac-push-main.mjs` — chặn push lên `main` (kể cả `git push` trần khi đứng trên main); lối ra `PUSH_APPROVED=1 git push` sau khi người dùng đồng ý.
 
+Đồ thị mã nguồn **GitNexus** (công cụ ngoài, giấy phép PolyForm Noncommercial — chỉ hợp lệ khi DivvyUp phi thương mại): MCP `gitnexus` khai trong `.mcp.json`, chạy **chỉ đọc** (`GITNEXUS_MCP_READ_ONLY=1` — tắt tool `rename` sửa file hàng loạt). `divvyup-planner` và `scout-repo` dùng `impact`/`context`/`query`/`trace`/`detect_changes` để tìm nơi gọi, rồi vẫn đọc file xác nhận; đồ thị không phủ SQL/RLS và không đánh giá đúng rủi ro tiền. Chỉ mục nằm ở `.gitnexus/` (bỏ khỏi git bằng `.git/info/exclude`, **không** sửa `.gitignore` gốc). Cài và làm mới: xem `docs/DEVELOPMENT.md` mục "GitNexus". Không chạy `gitnexus setup` (tự ghi đè cấu hình editor) hay `gitnexus wiki` (gửi mã cho LLM bên ngoài).
+
 Hết quota một model: đặt `ANTHROPIC_DEFAULT_OPUS_MODEL` trong `.claude/settings.local.json` (xem `agent-framework` mục 2) — khi đó kết luận ĐẠT của agent `opus` chỉ là tham khảo.
 
 **Quyết định sửa gì là của người dùng.** Agent soát chỉ trả về phát hiện; agent ghi file chỉ ghi trong phạm vi vai trò của nó.

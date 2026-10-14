@@ -50,6 +50,32 @@ GitHub Actions chạy đúng hai lệnh này cho mọi pull request, và trướ
 
 ---
 
+## GitNexus — đồ thị mã nguồn cho agent (tuỳ chọn)
+
+[GitNexus](https://github.com/abhigyanpatwari/GitNexus) đọc cả repo bằng Tree-sitter, dựng đồ thị "ai gọi ai" lưu ở `.gitnexus/`, và cho Claude Code tra qua MCP (`impact`, `context`, `query`, `trace`, `detect_changes`). `divvyup-planner` và `scout-repo` dùng nó để tìm nơi gọi nhanh hơn grep. Chạy hoàn toàn trên máy, không gửi mã đi đâu.
+
+> Giấy phép **PolyForm Noncommercial 1.0.0** — chỉ dùng được khi DivvyUp là dự án phi thương mại. App bắt đầu thu tiền thì gỡ ra.
+
+Cài (một lần, ghim phiên bản — không dùng `npx gitnexus` lấy bản mới nhất mỗi lần):
+
+```bash
+npm i -g gitnexus@1.6.12
+```
+
+Lập chỉ mục (chạy ở thư mục gốc repo; lần đầu ~1 phút):
+
+```bash
+gitnexus analyze --index-only
+```
+
+- `--index-only` là **bắt buộc**: thiếu nó, GitNexus tự chèn một đoạn vào `AGENTS.md`/`CLAUDE.md` và cài skill vào `.claude/skills/`.
+- `.gitnexus/` bỏ khỏi git bằng `.git/info/exclude` (mỗi máy tự thêm dòng `.gitnexus/`). **Không** thêm vào `.gitignore` gốc — file đó là nguồn runtime fingerprint, đổi là phải build APK mới.
+- Chỉ mục không tự cập nhật. Sau khi sửa nhiều hoặc đổi nhánh: chạy lại lệnh trên, hoặc `gitnexus status` để xem đã cũ chưa.
+
+MCP khai sẵn trong `.mcp.json` ở chế độ **chỉ đọc** (`GITNEXUS_MCP_READ_ONLY=1`, tắt tool `rename` sửa file hàng loạt). Claude Code hỏi duyệt server `gitnexus` ở lần mở project đầu tiên. Chưa cài `gitnexus` thì server không lên, agent tự quay về grep.
+
+Không chạy: `gitnexus setup` (ghi đè cấu hình MCP của mọi editor), `gitnexus wiki` / `--embeddings` với nhà cung cấp đám mây (gửi mã cho LLM bên ngoài). Gỡ: `gitnexus clean` trong repo, rồi `npm rm -g gitnexus`.
+
 ## Cài đặt Supabase (làm một lần cho mỗi project)
 
 ### 1. Database

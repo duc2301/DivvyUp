@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "gitnexus": {
+      "type": "stdio",
+      "command": "cmd",
+      "args": ["/c", "gitnexus", "mcp"],
+      "env": {
+        "GITNEXUS_MCP_READ_ONLY": "1"
+      }
+    }
+  }
+}

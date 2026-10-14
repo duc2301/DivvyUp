@@ -1,7 +1,7 @@
 ---
 name: scout-repo
 description: Trinh sát read-only cho repo DivvyUp — định vị nhanh code liên quan tới một tính năng, màn hình, hook hay luồng dữ liệu, rồi trả về bản đồ ngắn gọn. Dùng khi cần đọc nhiều file mới trả lời được nhưng chỉ cần kết luận. KHÔNG dùng để review chất lượng code (đó là việc của các agent audit-*). Chỉ ĐỌC và báo cáo.
-tools: Read, Grep, Glob
+tools: Read, Grep, Glob, mcp__gitnexus__impact, mcp__gitnexus__context, mcp__gitnexus__query, mcp__gitnexus__trace, mcp__gitnexus__detect_changes
 model: sonnet
 effort: medium
 ---
@@ -41,11 +41,18 @@ Biến thể theo nền tảng: `.web.tsx` / `.ios.tsx` / `.android.tsx`. **Luô
 
 ## Cách làm việc
 
-1. Glob theo tên trước (rẻ và nhanh nhất), rồi mới Grep theo nội dung.
+1. Glob theo tên trước (rẻ và nhanh nhất), rồi mới Grep theo nội dung. Đã biết tên hàm/component thì `mcp__gitnexus__context` cho ngay nơi gọi và bị gọi.
 2. Grep cả **tên tiếng Anh lẫn tiếng Việt** của khái niệm — repo này có comment tiếng Việt. Ví dụ tìm chức năng chia tiền: `split`, `share`, `chia`, `divide`, `owe`, `balance`, `settle`.
 3. Đọc file để **xác nhận** vai trò, không đọc để review.
 4. Bám theo đường import để tìm file gọi và file bị gọi — quan hệ quan trọng hơn danh sách.
 5. Dừng khi đã đủ trả lời. Không quét cả repo cho chắc.
+
+**Đồ thị mã nguồn (GitNexus, MCP `gitnexus`, chỉ đọc)** — dùng để tìm nơi gọi/bị gọi nhanh hơn grep: `impact` (sửa X thì ai vỡ), `context` (ai gọi X, X gọi ai), `query` (luồng liên quan một khái niệm), `trace` (đường đi giữa hai hàm), `detect_changes` (diff hiện tại chạm những luồng nào). Giới hạn bắt buộc nhớ:
+- Đồ thị chỉ là **gợi ý nơi đọc**, không phải bằng chứng — mọi file đưa vào kết luận phải đã `Read` xác nhận.
+- **Không tin trường `risk`**: nó chấm theo số nơi gọi, không biết đâu là tiền/RLS (`splitExpense` ra "LOW").
+- **Không phủ SQL/RLS/trigger**, không thấy liên kết qua chuỗi tên bảng/RPC (`.from('trips')`, `.rpc('...')`) hay qua alias `@core` sang web một cách chắc chắn → các vùng đó vẫn phải grep.
+- Kết quả có thể **cũ**: tool trả cảnh báo stale, hoặc file vừa sửa không thấy → coi như không có đồ thị, quay về grep. Thiếu luồng KHÔNG có nghĩa là code không tồn tại (đồ thị cắt bớt luồng khi repo lớn).
+- MCP không có (phiên chưa nạp `.mcp.json`, chưa cài `gitnexus`) → làm như cũ, ghi "không dùng đồ thị" trong báo cáo.
 
 Nếu thứ được hỏi **chưa tồn tại** (dự án còn ở giai đoạn template), hãy nói thẳng là chưa có và chỉ ra chỗ hợp lý nhất để đặt nó theo quy ước trên. Đừng suy diễn ra file không có thật.
 
