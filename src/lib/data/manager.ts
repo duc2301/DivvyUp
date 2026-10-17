@@ -15,6 +15,7 @@ import type { StoredExpense, StoredMember, StoredNote, StoredTrip } from '@/lib/
 import { localId, localStore } from '@/lib/storage/local-store';
 import { DataError } from '@/lib/supabase/errors';
 import type { ArchivedTrips } from '@/lib/trips/archive';
+import { guestRemovalBlock } from '@/lib/trips/member-removal';
 
 import type {
   ExpenseDetail,
@@ -320,9 +321,28 @@ export async function moveMemberToGroup(memberId: string, groupId: string | null
   await remoteTrips.moveMemberToGroup(memberId, groupId);
 }
 
-// KHÔNG có removeTripMember. Thành viên chỉ được thêm và đổi tên: xoá một người
-// vẫn gắn với khoản chi cũ làm tổng số dư của cả chuyến lệch khỏi 0. DB cũng
-// chặn việc này bằng trigger guard_trip_member_changes (migration 09).
+/**
+ * Xoá chỗ thành viên CHƯA có người nhận — thường là tên tạo thừa. Còn dính khoản
+ * chi/tất toán thì báo số khoản và không xoá: người biến mất khỏi khoản chi cũ
+ * làm tổng số dư cả chuyến lệch khỏi 0. Luật nằm ở src/lib/trips/member-removal.ts;
+ * DB chặn lại bằng trigger guard_trip_member_changes (migration
+ * 20260917_1000_harden_members_settlements.sql) — gồm cả "chỉ chủ chuyến".
+ */
+export async function removeTripMember(
+  memberId: string,
+  tripId: string,
+  displayName: string,
+): Promise<void> {
+  if (await isGuestMode()) {
+    const found = (await localStore.listAllMembers()).find((item) => item.id === memberId);
+    if (!found) throw new DataError('Không tìm thấy thành viên.');
+    const block = guestRemovalBlock(found, await localStore.listExpenses(found.tripId));
+    if (block) throw new DataError(block);
+    await localStore.deleteMember(found.id);
+    return;
+  }
+  await remoteTrips.removeUnclaimedMember(memberId, tripId, displayName);
+}
 
 export async function previewTripByCode(joinCode: string): Promise<TripPreview> {
   if (await isGuestMode()) return guestUnsupported('tham gia bằng mã mời');

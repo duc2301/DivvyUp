@@ -291,6 +291,14 @@ export class LocalStore {
     await this.set(this.keys.members, members);
   }
 
+  async deleteMember(id: string): Promise<void> {
+    const members = await this.listAllMembers();
+    await this.set(
+      this.keys.members,
+      members.filter((item) => item.id !== id),
+    );
+  }
+
   // --- Expenses ---
   async listAllExpenses(): Promise<StoredExpense[]> {
     return this.get<StoredExpense>(this.keys.expenses);

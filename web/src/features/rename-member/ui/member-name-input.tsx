@@ -14,7 +14,7 @@ interface MemberNameInputProps {
 
 /**
  * Tên sửa tại chỗ, lưu khi rời ô (không gọi mạng theo từng ký tự). Lỗi thì trả
- * ô về tên cũ. KHÔNG có nút xoá thành viên — DB cũng chặn (số dư lệch khỏi 0).
+ * ô về tên cũ. Xoá chỗ chưa nhận là việc của features/remove-member.
  */
 export function MemberNameInput({ member, onDraftChange, onSaved, onError }: MemberNameInputProps) {
   const [draft, setDraft] = useState(member.displayName);

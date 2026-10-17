@@ -53,8 +53,12 @@ export function ConfirmDialog({
           className="absolute inset-0 bg-black/50"
         />
         <View className="w-full max-w-sm gap-4 rounded-3xl bg-card p-6">
-          <Text className="font-display text-xl text-foreground">{title}</Text>
-          <Text className="text-sm leading-5 text-muted-foreground">{message}</Text>
+          {/* Live region: nội dung đổi khi đang mở (ví dụ "Chưa xoá được" kèm lý
+              do) thì trình đọc màn hình đọc lên. */}
+          <View accessibilityLiveRegion="polite" className="gap-4">
+            <Text className="font-display text-xl text-foreground">{title}</Text>
+            <Text className="text-sm leading-5 text-muted-foreground">{message}</Text>
+          </View>
           <View className="flex-row gap-3 pt-2">
             <View className="min-w-0 flex-1">
               <Button label={cancelLabel} variant="secondary" onPress={onCancel} disabled={busy} />

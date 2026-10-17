@@ -6,5 +6,6 @@ export {
   listTripGroups,
   listTripMembers,
   moveMemberToGroup,
+  removeUnclaimedMember,
   renameTripMember,
 } from '@core/lib/data/trips';

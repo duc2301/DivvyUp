@@ -15,7 +15,12 @@ import { supabase } from '@/lib/supabase/client';
 import type { Database, TripRole } from '@/lib/supabase/database.types';
 import { DataError, unwrap, unwrapVoid } from '@/lib/supabase/errors';
 
+import type { MemberUsage } from '@/lib/trips/member-removal';
+import { memberRemovalBlock } from '@/lib/trips/member-removal';
+
 import { avatarUrlFromPath } from './profile';
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /** Điểm đến của chuyến đi, chọn từ Mapbox. */
 export interface TripPlace {
@@ -540,6 +545,75 @@ export async function moveMemberToGroup(
   groupId: string | null,
 ): Promise<void> {
   unwrapVoid(await supabase.from('trip_members').update({ group_id: groupId }).eq('id', memberId));
+}
+
+/**
+ * Người này còn dính bao nhiêu khoản chi / tất toán còn hiệu lực — để báo lý do
+ * TRƯỚC khi xoá. Khoản đã đánh dấu xong vẫn tính (vẫn là khoản chi của chuyến);
+ * khoản đã xoá thì không (cùng quy tắc member_has_active_records ở DB).
+ * Ba truy vấn song song, mỗi cái chỉ lấy id.
+ */
+export async function getMemberUsage(memberId: string, tripId: string): Promise<MemberUsage> {
+  // memberId được ghép vào bộ lọc .or() của PostgREST — chỉ nhận đúng dạng uuid.
+  if (!UUID_PATTERN.test(memberId) || !UUID_PATTERN.test(tripId)) {
+    throw new DataError('Mã thành viên không hợp lệ.');
+  }
+  const [paid, shared, settlements] = await Promise.all([
+    supabase.from('expenses').select('id').eq('paid_by', memberId).is('deleted_at', null),
+    supabase
+      .from('expense_shares')
+      .select('expense_id, expense:expenses!inner(deleted_at)')
+      .eq('member_id', memberId)
+      .is('expense.deleted_at', null),
+    supabase
+      .from('settlements')
+      .select('id')
+      // trip_id: dùng được index settlements_trip_idx (from/to không có index riêng).
+      .eq('trip_id', tripId)
+      .or(`from_member.eq.${memberId},to_member.eq.${memberId}`)
+      .is('deleted_at', null),
+  ]);
+  const expenseIds = new Set([
+    ...unwrap(paid).map((row) => row.id),
+    ...unwrap(shared).map((row) => row.expense_id),
+  ]);
+  return { expenses: expenseIds.size, settlements: unwrap(settlements).length };
+}
+
+/**
+ * Xoá mềm một chỗ chưa có người nhận (đặt removed_at). Trigger
+ * guard_trip_member_changes là chốt chặn thật: chỉ chủ chuyến, chỉ chỗ chưa
+ * nhận, không dính khoản chi/tất toán — lỗi của nó đi thẳng lên màn hình.
+ * Chỗ đã xoá biến khỏi danh sách, khỏi số dư và khỏi màn nhận chỗ bằng mã mời.
+ */
+export async function removeTripMember(memberId: string): Promise<void> {
+  const rows = unwrap(
+    await supabase
+      .from('trip_members')
+      .update({ removed_at: new Date().toISOString() })
+      .eq('id', memberId)
+      .is('removed_at', null)
+      .select('id'),
+  );
+  if (rows.length === 0) {
+    // Có người vừa nhận chỗ thì trigger báo lỗi riêng; 0 dòng nghĩa là chỗ đã bị
+    // xoá trước đó hoặc bạn không còn trong chuyến.
+    throw new DataError('Không xoá được: chỗ này đã bị xoá, hoặc bạn không còn trong chuyến.');
+  }
+}
+
+/**
+ * Một đường duy nhất cho mobile (manager.ts) và web: đếm khoản chi/tất toán,
+ * còn dính thì báo số khoản và KHÔNG xoá; không dính mới xoá mềm.
+ */
+export async function removeUnclaimedMember(
+  memberId: string,
+  tripId: string,
+  displayName: string,
+): Promise<void> {
+  const block = memberRemovalBlock(displayName, await getMemberUsage(memberId, tripId));
+  if (block) throw new DataError(block);
+  await removeTripMember(memberId);
 }
 
 // ---------------------------------------------------------------------------

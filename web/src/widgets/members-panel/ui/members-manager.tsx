@@ -1,10 +1,11 @@
-import { ArrowRightLeft, Copy, Share2 } from 'lucide-react';
+import { ArrowRightLeft, Copy, Share2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 
 import type { TripGroup, TripMember } from '@/entities/member';
-import { moveMemberToGroup } from '@/entities/member';
+import { canOfferMemberRemoval, moveMemberToGroup } from '@/entities/member';
 import type { TripSummary } from '@/entities/trip';
 import { AddMemberRow, CreateGroupForm } from '@/features/add-member';
+import { RemoveMemberDialog } from '@/features/remove-member';
 import { MemberNameInput } from '@/features/rename-member';
 import { describeError } from '@/shared/lib/async';
 import { absoluteUrl, routes } from '@/shared/config';
@@ -29,6 +30,7 @@ function MemberRow({
   isLast,
   canMove,
   onMove,
+  onRemove,
   onSaved,
   onError,
 }: {
@@ -36,6 +38,8 @@ function MemberRow({
   readonly isLast: boolean;
   readonly canMove: boolean;
   readonly onMove: (member: TripMember) => void;
+  /** Có thì hiện nút xoá — chỉ truyền cho chỗ xoá được (canOfferMemberRemoval). */
+  readonly onRemove?: (member: TripMember) => void;
   readonly onSaved: () => void;
   readonly onError: (message: string | null) => void;
 }) {
@@ -50,15 +54,26 @@ function MemberRow({
       {canMove ? (
         <IconButton icon={ArrowRightLeft} label={`Chuyển ${member.displayName} sang nhóm khác`} onClick={() => onMove(member)} />
       ) : null}
+      {onRemove ? (
+        <IconButton
+          icon={Trash2}
+          label={`Xoá ${member.displayName} khỏi chuyến`}
+          variant="danger"
+          onClick={() => onRemove(member)}
+        />
+      ) : null}
     </li>
   );
 }
 
-/** Trang Thành viên: mã mời + chia sẻ/copy, thẻ theo nhóm, đổi tên tại chỗ, chuyển nhóm. */
+/** Trang Thành viên: mã mời + chia sẻ/copy, thẻ theo nhóm, đổi tên tại chỗ, chuyển nhóm, xoá chỗ chưa nhận. */
 export function MembersManager({ trip, groups, members, onChanged }: MembersManagerProps) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [moving, setMoving] = useState<TripMember | null>(null);
+  const [removing, setRemoving] = useState<TripMember | null>(null);
+  // Nút xoá: chỉ chủ chuyến, chỉ chỗ chưa ai nhận (DB chặn lại lần nữa).
+  const viewerIsOwner = members.find((member) => member.isMe)?.role === 'owner';
 
   const membersOf = (group: TripGroup | null): TripMember[] =>
     members.filter((member) => (group === null ? member.groupId === null : member.groupId === group.id));
@@ -101,6 +116,7 @@ export function MembersManager({ trip, groups, members, onChanged }: MembersMana
               isLast={index === list.length - 1}
               canMove={canMove}
               onMove={setMoving}
+              onRemove={canOfferMemberRemoval(member, viewerIsOwner) ? setRemoving : undefined}
               onSaved={onChanged}
               onError={setActionError}
             />
@@ -177,6 +193,13 @@ export function MembersManager({ trip, groups, members, onChanged }: MembersMana
             .catch((caught: unknown) => setActionError(describeError(caught)));
         }}
         onClose={() => setMoving(null)}
+      />
+
+      <RemoveMemberDialog
+        tripId={trip.id}
+        member={removing}
+        onClose={() => setRemoving(null)}
+        onRemoved={onChanged}
       />
     </>
   );

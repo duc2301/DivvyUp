@@ -5,8 +5,9 @@ import { Pressable, Share, Text, TextInput, View } from 'react-native';
 import { AppHeader } from '@/components/ui/app-header';
 import { Avatar } from '@/components/ui/avatar';
 import { Button } from '@/components/ui/button';
+import { ConfirmDialog } from '@/components/ui/confirm-dialog';
 import { IconButton } from '@/components/ui/icon-button';
-import { ArrowRightLeft, Minus, Plus, Share2, Users } from '@/components/ui/icons';
+import { ArrowRightLeft, Minus, Plus, Share2, Trash2, Users } from '@/components/ui/icons';
 import { PickerModal } from '@/components/ui/picker-modal';
 import { Screen } from '@/components/ui/screen';
 import { ErrorView, LoadingView } from '@/components/ui/state-views';
@@ -18,10 +19,13 @@ import {
   listTripGroups,
   listTripMembers,
   moveMemberToGroup,
+  removeTripMember,
   renameTripMember,
 } from '@/lib/data/manager';
 import type { TripGroup, TripMember } from '@/lib/data/trips';
 import { describeError, useAsync } from '@/lib/data/use-async';
+import { useSessionContext } from '@/features/auth/session-context';
+import { canOfferMemberRemoval } from '@/lib/trips/member-removal';
 
 const MAX_GROUP_SIZE = 100;
 
@@ -37,6 +41,8 @@ interface MemberRowProps {
   /** Trả về false nếu lưu thất bại. */
   readonly onRename: (id: string, name: string) => Promise<boolean>;
   readonly onMove: (member: TripMember) => void;
+  /** Có thì hiện nút xoá — chỉ truyền cho chỗ xoá được (canOfferMemberRemoval). */
+  readonly onRemove?: (member: TripMember) => void;
 }
 
 /** Trạng thái ghi thành dòng phụ dưới tên — không chiếm chỗ ngang của ô tên. */
@@ -59,10 +65,19 @@ function StatusLine({
 /**
  * Tên sửa trực tiếp tại chỗ, lưu khi rời ô.
  *
- * KHÔNG có nút xoá, có chủ đích: người đã gắn với khoản chi mà biến mất thì tổng
- * số dư của chuyến lệch khỏi 0. DB cũng chặn việc này.
+ * Nút xoá chỉ có ở chỗ chưa ai nhận và chỉ chủ chuyến thấy. Còn dính khoản chi
+ * thì bấm xoá sẽ được báo lý do, không xoá — người biến mất khỏi khoản chi cũ
+ * làm tổng số dư lệch khỏi 0 (DB cũng chặn).
  */
-function MemberRow({ member, isLast, canMove, canInvite, onRename, onMove }: MemberRowProps) {
+function MemberRow({
+  member,
+  isLast,
+  canMove,
+  canInvite,
+  onRename,
+  onMove,
+  onRemove,
+}: MemberRowProps) {
   const [draft, setDraft] = useState(member.displayName);
   const [focused, setFocused] = useState(false);
 
@@ -107,6 +122,14 @@ function MemberRow({ member, isLast, canMove, canInvite, onRename, onMove }: Mem
           icon={ArrowRightLeft}
           label={`Chuyển ${member.displayName} sang nhóm khác`}
           onPress={() => onMove(member)}
+        />
+      ) : null}
+      {onRemove ? (
+        <IconButton
+          icon={Trash2}
+          label={`Xoá ${member.displayName} khỏi chuyến`}
+          variant="danger"
+          onPress={() => onRemove(member)}
         />
       ) : null}
     </View>
@@ -172,6 +195,8 @@ function GroupCard({
   onRename,
   onMove,
   onAdd,
+  canRemove,
+  onRemove,
 }: {
   readonly title: string;
   readonly members: readonly TripMember[];
@@ -181,6 +206,8 @@ function GroupCard({
   readonly onRename: (id: string, name: string) => Promise<boolean>;
   readonly onMove: (member: TripMember) => void;
   readonly onAdd: (name: string) => Promise<boolean>;
+  readonly canRemove: (member: TripMember) => boolean;
+  readonly onRemove: (member: TripMember) => void;
 }) {
   return (
     <View className="rounded-3xl border border-border bg-card px-4 pb-4 pt-3">
@@ -208,6 +235,7 @@ function GroupCard({
               canInvite={canInvite}
               onRename={onRename}
               onMove={onMove}
+              onRemove={canRemove(member) ? onRemove : undefined}
             />
           ))}
         </View>
@@ -232,6 +260,13 @@ export default function TripMembersScreen() {
   const [groupName, setGroupName] = useState('');
   const [groupSize, setGroupSize] = useState(4);
   const [moving, setMoving] = useState<TripMember | null>(null);
+  // Chỗ đang hỏi xoá. Tách dialogOpen khỏi removing để tên còn nguyên lúc hộp
+  // thoại mờ dần khi đóng.
+  const [removing, setRemoving] = useState<TripMember | null>(null);
+  const [removeOpen, setRemoveOpen] = useState(false);
+  const [removeError, setRemoveError] = useState<string | null>(null);
+  const [removeBusy, setRemoveBusy] = useState(false);
+  const { isGuest } = useSessionContext();
 
   const { data, error, loading, reload } = useAsync(async () => {
     if (!tripId) throw new Error('Thiếu mã chuyến đi.');
@@ -286,6 +321,33 @@ export default function TripMembersScreen() {
     void Share.share({
       message: `Tham gia chuyến "${data.trip.name}" trên DivvyUp: mở app → Tham gia bằng mã mời → nhập mã ${data.trip.joinCode}`,
     }).catch(() => undefined);
+  };
+
+  // Khách: một người dùng máy này, coi như chủ chuyến (nhánh khách tự giữ chỗ isMe).
+  const viewerIsOwner =
+    isGuest || (data?.members.find((member) => member.isMe)?.role ?? null) === 'owner';
+  const canRemove = (member: TripMember): boolean =>
+    canOfferMemberRemoval(member, viewerIsOwner) && !(isGuest && member.isMe);
+  const askRemove = (member: TripMember): void => {
+    setRemoveError(null);
+    setRemoving(member);
+    setRemoveOpen(true);
+  };
+  const confirmRemove = async (): Promise<void> => {
+    if (!removing) return;
+    setRemoveBusy(true);
+    setRemoveError(null);
+    try {
+      if (!tripId) return;
+      await removeTripMember(removing.id, tripId, removing.displayName);
+      setRemoveOpen(false);
+      reload();
+    } catch (caught) {
+      // Giữ hộp thoại mở và nói lý do (đang trong N khoản chi…) ngay tại chỗ.
+      setRemoveError(describeError(caught));
+    } finally {
+      setRemoveBusy(false);
+    }
   };
 
   const ungrouped = membersOf(null);
@@ -349,6 +411,8 @@ export default function TripMembersScreen() {
                 onRename={rename}
                 onMove={setMoving}
                 onAdd={addTo(group.id)}
+                canRemove={canRemove}
+                onRemove={askRemove}
               />
             ))}
 
@@ -362,6 +426,8 @@ export default function TripMembersScreen() {
                 onRename={rename}
                 onMove={setMoving}
                 onAdd={addTo(null)}
+                canRemove={canRemove}
+                onRemove={askRemove}
               />
             ) : null}
 
@@ -457,6 +523,22 @@ export default function TripMembersScreen() {
           void run(() => moveMemberToGroup(member.id, value === '__none__' ? null : value));
         }}
         onClose={() => setMoving(null)}
+      />
+
+      <ConfirmDialog
+        visible={removeOpen}
+        title={removeError ? 'Chưa xoá được' : 'Xoá thành viên?'}
+        message={
+          removeError ??
+          `"${removing?.displayName ?? ''}" chưa có ai nhận chỗ. Xoá khỏi chuyến thì tên này không còn trong danh sách, chia đều hay mã mời nữa.`
+        }
+        // Bị chặn (còn trong khoản chi) thì bấm lại cũng vô ích — nút chỉ để đóng;
+        // lỗi mạng thì bấm thùng rác lần nữa để thử lại.
+        confirmLabel={removeError ? 'Đã hiểu' : 'Xoá'}
+        destructive={removeError === null}
+        busy={removeBusy}
+        onConfirm={() => (removeError ? setRemoveOpen(false) : void confirmRemove())}
+        onCancel={() => setRemoveOpen(false)}
       />
     </>
   );
