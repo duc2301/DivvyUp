@@ -36,14 +36,15 @@ Chạy **đúng thứ tự**, mỗi file một lần, trong SQL Editor của das
 | 6 | `migrations/20260916_1010_fix_trip_insert_visibility.sql` | người tạo luôn thấy chuyến đi của mình (xem ghi chú trong file) |
 | 7 | `migrations/20260916_1020_trip_place.sql` | điểm đến của chuyến đi (cột `place_*`, toạ độ) |
 | 8 | `migrations/20260916_1030_trip_cover_gallery.sql` | bộ ảnh bìa `cover_images` + `cover_image_index`, gỡ 4 cột ảnh đơn |
-| 9 | `migrations/20260916_1040_lock_trip_members.sql` | chặn xoá thành viên, chặn tự nâng quyền. **Không bao giờ chạy lại sau số 10** (xem đầu file 10) |
-| 10 | `migrations/20260917_1000_harden_members_settlements.sql` | siết thành viên/tất toán, xoá mềm một chiều, `is_privileged_session()` |
+| 9 | `migrations/20260916_1040_lock_trip_members.sql` | chặn xoá thành viên (bản đầu — số 10 nới cho chủ chuyến gỡ chỗ chưa nhận, không dính tiền), chặn tự nâng quyền. **Không bao giờ chạy lại sau số 10** (xem đầu file 10) |
+| 10 | `migrations/20260917_1000_harden_members_settlements.sql` | siết thành viên/tất toán, xoá mềm một chiều, `is_privileged_session()`. Trigger `guard_trip_member_changes`: chỉ CHỦ CHUYẾN gỡ được (đặt `removed_at`) chỗ CHƯA có người nhận, không phải owner, không dính khoản chi/tất toán còn hiệu lực (`member_has_active_records`, tính cả khoản đã đánh dấu xong) |
 | 11 | `migrations/20260917_1100_profile_payment_settled.sql` | ảnh đại diện, mã QR nhận tiền (Storage), khoản chi "đã xong" |
 | 12 | `migrations/20260925_1000_trip_collab_notes_history.sql` | thành viên sửa chuyến qua RPC, khoá `join_code`/`created_by`/`currency`, bảng `trip_notes`, nhật ký `expense_events`, bỏ policy UPDATE của `expenses` |
 | 13 | `migrations/20260926_1000_trip_archives_lock_deletes.sql` | bảng `trip_archives` (lưu trữ chuyến đi riêng từng người), chặn xoá chuyến qua trigger `trips_guard_identity` (cả deleted_at), bỏ policy UPDATE của `trips`, bỏ policy INSERT/UPDATE của `settlements`. **Không chạy lại migration 12 sau file này** — nó ghi đè `guard_trip_identity_columns` bằng bản chưa chặn `deleted_at` |
 | 14 | `migrations/20260928_1000_google_sign_in.sql` | đăng nhập Google: RPC `account_needs_password()` (cổng "Đặt mật khẩu" cho người mới tạo qua Google), `handle_new_user` lấy tên Google (`full_name`/`name`), cắt 80 ký tự |
+| 15 | `migrations/20261017_1000_note_collab_realtime.sql` | đồng soạn ghi chú: hàm `can_join_note_channel(topic)` + 2 policy trên `realtime.messages` (chỉ thành viên còn trong chuyến join được kênh private `trip-notes:<tripId>:<noteId>`); vá chỗ đua trong `join_trip_by_code` (khoá dòng, không nhận vào chỗ vừa bị gỡ/vừa có người nhận). **Việc tay:** Dashboard → Project Settings → Realtime → tắt "Allow public access" |
 
-Xong thì chạy `verify.sql` — **mục 1–18, 20, 21, 23, 24 phải trả về 0 dòng**. Mục 19 và 22 chỉ để soát thủ công (không bắt buộc 0 dòng); mục 25 là checklist kiểm tay đăng nhập Google (câu lệnh để trong comment).
+Xong thì chạy `verify.sql` — **mục 1–18, 20, 21, 23, 24, 26, 27 phải trả về 0 dòng**. Mục 19 và 22 chỉ để soát thủ công (không bắt buộc 0 dòng); mục 25 là checklist kiểm tay đăng nhập Google, mục 27 kèm checklist kiểm tay đồng soạn + xoá thành viên (để trong comment).
 
 ## Những quyết định đáng nhớ
 
@@ -101,4 +102,4 @@ Một tài khoản không kiểm được gì về cô lập dữ liệu.
 
 ## Còn thiếu
 
-Chưa có: đổi mã tham gia khi bị lộ, hạn dùng của mã, Realtime, phân trang khi danh sách khoản chi dài, nhiều người cùng ứng tiền cho một khoản (hiện chỉ một đại diện), và tỷ giá khi chuyến đi cần nhiều đơn vị tiền tệ (hiện mỗi chuyến khoá một đơn vị).
+Chưa có: đổi mã tham gia khi bị lộ, hạn dùng của mã, Realtime ngoài ghi chú (khoản chi/số dư vẫn tải lại khi quay về màn), phân trang khi danh sách khoản chi dài, nhiều người cùng ứng tiền cho một khoản (hiện chỉ một đại diện), và tỷ giá khi chuyến đi cần nhiều đơn vị tiền tệ (hiện mỗi chuyến khoá một đơn vị).

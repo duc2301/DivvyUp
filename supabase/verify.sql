@@ -344,3 +344,64 @@ where char_length(display_name) not between 1 and 80;
 --
 -- TC-8 (tên Google > 80 ký tự) — thử công thức trên chuỗi, không cần tạo user:
 -- select char_length(left(coalesce(nullif(trim(repeat('Nguyễn ', 20)), ''), 'x'), 80));  -- = 80
+
+
+-- 26. Thành viên đã gỡ (removed_at) mà là chủ chuyến, hoặc còn dính khoản
+--     chi/tất toán còn hiệu lực. Trigger guard_trip_member_changes chặn cả hai;
+--     truy vấn này bắt dữ liệu lọt hoặc trigger bị gỡ. (Không xét "còn tài
+--     khoản": trước migration 9 ai cũng gỡ được, có thể còn dòng gỡ để thu hồi
+--     quyền hợp lệ từ hồi đó — soát tay nếu cần.) Mong đợi 0 dòng.
+select tm.id as thanh_vien_go_sai, tm.trip_id, tm.display_name
+from public.trip_members tm
+where tm.removed_at is not null
+  and (tm.role = 'owner' or public.member_has_active_records(tm.id));
+
+
+-- 27. Quyền kênh realtime đồng soạn ghi chú + bản vá nhận chỗ (migration
+--     20261017_1000). Chạy được cả khi CHƯA chạy migration (báo dòng thay vì văng
+--     lỗi). Mong đợi 0 dòng.
+with fn as (
+  select to_regprocedure('public.can_join_note_channel(text)') as oid
+)
+select 'chưa có hàm can_join_note_channel — chạy migration 20261017_1000' as loi
+from fn where fn.oid is null
+union all
+select 'can_join_note_channel mở cho anon'
+from fn where fn.oid is not null and has_function_privilege('anon', fn.oid, 'execute')
+union all
+select 'authenticated mất quyền gọi can_join_note_channel (mọi lượt vào kênh sẽ bị từ chối)'
+from fn where fn.oid is not null and not has_function_privilege('authenticated', fn.oid, 'execute')
+union all
+select 'thiếu policy ' || p.name || ' (' || p.cmd || ')'
+from (values ('note_collab_receive', 'SELECT'), ('note_collab_send', 'INSERT')) as p(name, cmd)
+where not exists (
+  select 1 from pg_policies
+  where schemaname = 'realtime' and tablename = 'messages'
+    and policyname = p.name and cmd = p.cmd
+)
+union all
+-- Mọi policy trên realtime.messages: không mở cho anon/public, và phải đi qua
+-- can_join_note_channel (một policy `true` là ai đăng nhập cũng nghe được ghi
+-- chú của mọi chuyến).
+select 'policy realtime.messages quá rộng: ' || policyname || ' (' || cmd || ')'
+from pg_policies
+where schemaname = 'realtime' and tablename = 'messages'
+  and (
+    roles && array['anon', 'public']::name[]
+    or coalesce(qual, '') || coalesce(with_check, '') not like '%can_join_note_channel%'
+  )
+union all
+select 'join_trip_by_code chưa vá chỗ đua — chạy migration 20261017_1000'
+where pg_get_functiondef('public.join_trip_by_code(text, uuid)'::regprocedure) not ilike '%row_count%'
+   or pg_get_functiondef('public.join_trip_by_code(text, uuid)'::regprocedure) not ilike '%for update%';
+--
+-- KIỂM TAY (3 tài khoản A, B cùng chuyến X; C ngoài chuyến):
+--   - A và B mở cùng một ghi chú: gõ ở A hiện ở B trong ~1 giây, thấy con trỏ
+--     và tên của nhau; đóng hết rồi mở lại vẫn đúng chữ.
+--   - C join kênh `trip-notes:<X>:<noteId>` với private: true → CHANNEL_ERROR
+--     (không nhận, không gửi được). C join cùng topic với private: false → không
+--     nhận được gì (cần đã tắt "Allow public access" trên dashboard).
+--   - Ghi chú bị xoá → không join mới được.
+--   - A (chủ chuyến) xoá chỗ chưa ai nhận, không dính khoản chi → biến khỏi danh
+--     sách và màn nhận chỗ bằng mã mời; chỗ còn trong khoản chi → báo số khoản,
+--     không xoá; B (không phải chủ chuyến) không thấy nút xoá.
