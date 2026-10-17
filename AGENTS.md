@@ -81,6 +81,7 @@ Hai luật chống trôi:
 * **Reanimated 4**: code trong worklet không được đụng state React hay biến ngoài chưa capture đúng. Animation phải chạy trên UI thread; rơi về JS thread là lỗi hiệu năng.
 * Component riêng của một feature thì đặt cùng thư mục feature, không nhét hết vào `src/components`.
 * **Cổng đặt mật khẩu (đăng nhập Google với tài khoản chưa có mật khẩu):** lõi thuần ở `src/lib/auth/password-gate.ts`, dữ liệu ở `src/lib/data/account.ts`. Chặn ở `src/app/_layout.tsx` (`AuthGate`, mobile) và `web/src/app/router/guards.tsx` (`RequireAuth`/`RequirePasswordSetup`, web) — chặn **trước** mọi màn khác, kể cả deep link `/trips`, `/join`.
+* **Đồng soạn ghi chú:** lõi ở `src/lib/notes/collab-session.ts`, không qua `manager.ts` vì chế độ khách không có realtime (khách giữ luồng ghi chú cũ). Metro alias `lib0/webcrypto` → `src/lib/polyfills/lib0-webcrypto.ts`; **không thêm `isomorphic-webcrypto`** vì là module native, đổi fingerprint.
 * **Không thêm `expo-web-browser` vào `plugins` trong `app.json`.** Đăng nhập Google trên mobile dùng `expo-web-browser` đã có sẵn trong APK nhưng không khai trong `plugins` — thêm vào đó đổi fingerprint native, buộc phải build APK mới thay vì giao qua OTA.
 
 ---

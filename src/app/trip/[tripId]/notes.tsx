@@ -12,6 +12,8 @@ import { Screen } from '@/components/ui/screen';
 import { SectionCard } from '@/components/ui/section-card';
 import { EmptyView, ErrorView, LoadingView } from '@/components/ui/state-views';
 import { TextField } from '@/components/ui/text-field';
+import { useSessionContext } from '@/features/auth/session-context';
+import { CollabNoteEditor } from '@/features/notes/collab-note-editor';
 import {
   createTripNote,
   deleteTripNote,
@@ -51,6 +53,9 @@ export default function TripNotesScreen() {
   const tripId = firstParam(params.tripId);
 
   const [draft, setDraft] = useState<Draft | null>(null);
+  // Ghi chú đang mở ở chế độ đồng soạn (đã đăng nhập, ghi chú đã có).
+  const [collabNote, setCollabNote] = useState<TripNote | null>(null);
+  const { isGuest } = useSessionContext();
   const [busy, setBusy] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
@@ -60,6 +65,7 @@ export default function TripNotesScreen() {
   // do app chủ động (ví dụ phiên hết hạn → màn đăng nhập) thì cho đi tiếp,
   // không được giữ người dùng kẹt lại ở đây.
   const navigation = useNavigation();
+  // Trình đồng soạn tự chặn Back (lưu xong rồi mới đóng) — ở đây chỉ lo bản nháp.
   usePreventRemove(draft !== null, ({ data: event }) => {
     setDraft(null);
     if (event.action.type !== 'GO_BACK' && event.action.type !== 'POP') {
@@ -81,8 +87,16 @@ export default function TripNotesScreen() {
     setDraft({ id: null, loadedAt: null, template, title: template.title, body: template.body });
   };
 
+  const myMemberId = data?.members.find((member) => member.isMe)?.id ?? null;
+
   const openNote = (note: TripNote): void => {
     setActionError(null);
+    // Đăng nhập → sửa cùng lúc với người khác (realtime). Khách: luồng cũ, lưu
+    // trên máy, không có ai khác để đồng bộ.
+    if (!isGuest && myMemberId !== null) {
+      setCollabNote(note);
+      return;
+    }
     setDraft({
       id: note.id,
       loadedAt: note.updatedAt,
@@ -142,6 +156,22 @@ export default function TripNotesScreen() {
       setBusy(false);
     }
   };
+
+  if (collabNote && tripId && myMemberId) {
+    return (
+      <CollabNoteEditor
+        tripId={tripId}
+        note={collabNote}
+        template={presetOf(collabNote.template)}
+        members={data?.members ?? []}
+        myMemberId={myMemberId}
+        onClose={(changed) => {
+          setCollabNote(null);
+          if (changed) reload();
+        }}
+      />
+    );
+  }
 
   if (draft) {
     return (

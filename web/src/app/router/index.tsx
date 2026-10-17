@@ -8,7 +8,6 @@ import { ForgotPasswordPage } from '@/pages/forgot-password';
 import { JoinPage } from '@/pages/join';
 import { MembersPage } from '@/pages/members';
 import { NotFoundPage } from '@/pages/not-found';
-import { NotesPage } from '@/pages/notes';
 import { PlacePage } from '@/pages/place';
 import { ProfilePage } from '@/pages/profile';
 import { ResetPasswordPage } from '@/pages/reset-password';
@@ -47,7 +46,12 @@ export const router = createBrowserRouter([
       { path: '/trips/:tripId', element: <TripPage /> },
       { path: '/trips/:tripId/edit', element: <TripEditPage /> },
       { path: '/trips/:tripId/place', element: <PlacePage /> },
-      { path: '/trips/:tripId/notes', element: <NotesPage /> },
+      // Tải theo nhu cầu: trang ghi chú kéo theo Yjs (đồng soạn, ~80 KB) — không
+      // bắt người chỉ xem danh sách chuyến hay khoản chi tải nó.
+      {
+        path: '/trips/:tripId/notes',
+        lazy: async () => ({ Component: (await import('@/pages/notes')).NotesPage }),
+      },
       { path: '/trips/:tripId/members', element: <MembersPage /> },
       { path: '/trips/:tripId/balances', element: <BalancesPage /> },
       { path: '/trips/:tripId/expenses/new', element: <ExpenseFormPage /> },

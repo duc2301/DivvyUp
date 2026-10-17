@@ -11,7 +11,7 @@ Dành cho người phát triển và vận hành app. Giới thiệu app cho ng�
 | Dữ liệu & đăng nhập | Supabase: Postgres + RLS, Auth (PKCE), Edge Functions |
 | Build & cập nhật | EAS Build, EAS Update, GitHub Actions |
 
-Không có backend riêng. Logic nghiệp vụ nằm trong app; **RLS và RPC trong Postgres là lớp bảo mật duy nhất**, nên mọi quy tắc quan trọng (tổng phần chia, quyền chủ chuyến, không xoá thành viên đang có khoản chi) đều được chặn lại ở database.
+Không có backend riêng. Logic nghiệp vụ nằm trong app; **RLS và RPC trong Postgres là lớp bảo mật duy nhất**, nên mọi quy tắc quan trọng (tổng phần chia, quyền chủ chuyến, chỉ chủ chuyến mới gỡ được chỗ thành viên chưa có người nhận, và chỉ khi chỗ đó không dính khoản chi/tất toán còn hiệu lực) đều được chặn lại ở database.
 
 ---
 
@@ -87,6 +87,8 @@ Mở **SQL Editor**, chạy lần lượt các file trong `supabase/migrations/`
 > ⚠️ Không chạy lại `20260925_1000_trip_collab_notes_history.sql` **sau** `20260926_1000_trip_archives_lock_deletes.sql`: nó ghi đè `guard_trip_identity_columns` bằng bản chưa chặn xoá chuyến đi (`deleted_at`).
 
 Migration `20260917_1100_profile_payment_settled.sql` tự tạo hai bucket Storage kèm policy: `avatars` (công khai) và `payment-qr` (riêng tư). Không cần tạo tay trên dashboard.
+
+Migration `20261017_1000_note_collab_realtime.sql` (số 15, đồng soạn ghi chú) cần thêm một **việc tay**: Dashboard → Project Settings → Realtime → tắt **Allow public access**, để kênh private chỉ cho thành viên chuyến vào.
 
 `supabase/verify.sql` dùng để kiểm tra nhanh sau khi chạy.
 `supabase/cleanup-before-release.sql` xoá toàn bộ chuyến đi và khoản chi, **giữ tài khoản**. Chỉ dùng khi dọn dữ liệu thử.
@@ -210,13 +212,15 @@ src/
   features/profile/    ảnh đại diện, hồ sơ
   features/weather/    dự báo thời tiết theo chuyến đi
   features/place/      chọn điểm đến, ảnh bìa
+  features/notes/      editor đồng soạn ghi chú, con trỏ người khác
   lib/money/           tiền: chia, số dư, định dạng (có unit test)
   lib/data/            truy cập dữ liệu, tự chọn Supabase hoặc lưu trên máy (khách)
   lib/trips/           lõi thuần lưu trữ chuyến đi (đã kết thúc chưa, nhắc lưu trữ) — dùng chung mobile/web
   lib/supabase/        client, kiểu database, xử lý lỗi
   lib/storage/         lưu trữ trên máy (chế độ khách)
   lib/weather/         khung giờ dự báo, mã thời tiết
-  lib/notes/           mẫu ghi chú chuyến đi
+  lib/notes/           mẫu ghi chú; đồng soạn: collab.ts (Yjs), collab-protocol.ts, collab-session.ts (lõi phiên), note-rules.ts, use-note-collab.ts
+  lib/polyfills/       polyfill cho Metro (lib0-webcrypto)
   lib/expenses/        so sánh/diff lịch sử khoản chi
 web/
   src/                 bản web (Feature-Sliced Design), dùng lại lib/ ở trên qua alias @core

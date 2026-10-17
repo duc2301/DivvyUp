@@ -17,5 +17,9 @@ export {
   updateTripNote,
 } from '@core/lib/data/notes';
 
+// Đồng soạn (realtime) — logic ở lõi dùng chung, web chỉ vẽ giao diện.
+export type { PeerCursor, SessionSnapshot } from '@core/lib/notes/collab-session';
+export { useNoteCollab } from '@core/lib/notes/use-note-collab';
+
 export type { NotePreset } from '@core/lib/notes/templates';
 export { NOTE_PRESETS, presetOf } from '@core/lib/notes/templates';

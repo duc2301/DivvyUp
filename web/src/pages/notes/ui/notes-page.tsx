@@ -2,9 +2,9 @@ import { useState } from 'react';
 import { useParams } from 'react-router';
 
 import { listTripMembers, memberLookup } from '@/entities/member';
-import { listTripNotes, NOTE_PRESETS, NoteCard } from '@/entities/note';
+import { listTripNotes, NOTE_PRESETS, NoteCard, presetOf } from '@/entities/note';
 import type { NoteDraftSource } from '@/features/note-editor';
-import { NoteEditor } from '@/features/note-editor';
+import { CollabNoteEditor, NoteEditor } from '@/features/note-editor';
 import { useAsync } from '@/shared/lib/async';
 import { routes } from '@/shared/config';
 import { AppHeader, EmptyView, ErrorView, LoadingView, Screen, SectionCard } from '@/shared/ui';
@@ -19,15 +19,33 @@ export function NotesPage() {
     return { notes, members };
   }, [tripId]);
 
+  const myMemberId = data?.members.find((member) => member.isMe)?.id ?? null;
+  const close = (changed: boolean): void => {
+    setDraft(null);
+    if (changed) reload();
+  };
+
+  // Ghi chú đã có → sửa cùng lúc với người khác (realtime). Ghi chú mới vẫn soạn
+  // rồi bấm ✓ để tạo; từ lần mở sau mới đồng soạn.
+  if (draft?.kind === 'existing' && myMemberId !== null && data) {
+    return (
+      <CollabNoteEditor
+        tripId={tripId}
+        note={draft.note}
+        template={presetOf(draft.note.template)}
+        members={data.members}
+        myMemberId={myMemberId}
+        onClose={close}
+      />
+    );
+  }
+
   if (draft) {
     return (
       <NoteEditor
         tripId={tripId}
         source={draft}
-        onClose={(changed) => {
-          setDraft(null);
-          if (changed) reload();
-        }}
+        onClose={close}
       />
     );
   }

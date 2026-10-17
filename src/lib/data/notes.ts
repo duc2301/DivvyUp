@@ -7,6 +7,7 @@
  */
 
 import { supabase } from '@/lib/supabase/client';
+import { NOTE_BODY_MAX, NOTE_TITLE_MAX, sameInstant } from '@/lib/notes/note-rules';
 import { DataError, unwrap } from '@/lib/supabase/errors';
 
 /**
@@ -38,8 +39,8 @@ export interface TripNoteInput {
   readonly body: string;
 }
 
-export const NOTE_TITLE_MAX = 120;
-export const NOTE_BODY_MAX = 10000;
+// Nguồn chân lý: src/lib/notes/note-rules.ts (dùng chung với lõi đồng soạn).
+export { NOTE_BODY_MAX, NOTE_TITLE_MAX } from '@/lib/notes/note-rules';
 
 /**
  * Kiểm + chuẩn hoá nội dung ghi chú. Dùng chung cho nhánh khách để hai bên báo
@@ -172,10 +173,64 @@ export async function updateTripNote(
   throw new DataError(NOTE_NOT_FOUND, '42501');
 }
 
-/** So hai mốc giờ ISO theo thời điểm, không theo chuỗi (định dạng múi giờ có thể khác). */
-function sameInstant(a: string, b: string): boolean {
-  return a === b || Date.parse(a) === Date.parse(b);
+/** Bản ghi chú đang nằm trong DB — đọc lại khi gieo đồng soạn và khi lưu bị trễ nhịp. */
+export interface StoredNoteContent {
+  readonly title: string;
+  readonly body: string;
+  readonly updatedAt: string;
 }
+
+export type SaveNoteResult =
+  | { readonly kind: 'saved'; readonly updatedAt: string }
+  | { readonly kind: 'stale'; readonly current: StoredNoteContent };
+
+/** Ghi chú còn hiệu lực, hoặc null nếu đã xoá / không còn quyền. */
+export async function getNoteContent(noteId: string): Promise<StoredNoteContent | null> {
+  const row = unwrap(
+    await supabase
+      .from('trip_notes')
+      .select('title, body, updated_at')
+      .eq('id', noteId)
+      .is('deleted_at', null),
+  )[0];
+  return row ? { title: row.title, body: row.body, updatedAt: row.updated_at } : null;
+}
+
+/**
+ * Lưu cho chế độ đồng soạn: cùng khoá lạc quan với updateTripNote, nhưng trả về
+ * mốc updated_at MỚI (để lần lưu sau dùng) và khi trễ nhịp thì trả luôn bản đang
+ * nằm trong DB — người gọi quyết định đó là bản của người cùng phòng hay bản ghi
+ * đè từ app cũ cần gộp (src/lib/notes/use-note-collab.ts).
+ */
+export async function saveNoteContent(
+  noteId: string,
+  input: { title: string; body: string },
+  expectedUpdatedAt: string,
+): Promise<SaveNoteResult> {
+  // Kiểm độ dài nhưng lưu NGUYÊN VĂN (không trim tiêu đề): chữ trong DB phải
+  // trùng chữ đang đồng bộ, không thì lần gieo sau lệch mã băm.
+  validateNoteInput(input);
+  const rows = unwrap(
+    await supabase
+      .from('trip_notes')
+      .update({ title: input.title, body: input.body })
+      .eq('id', noteId)
+      .eq('updated_at', expectedUpdatedAt)
+      .is('deleted_at', null)
+      .select('updated_at'),
+  );
+  const saved = rows[0];
+  if (saved) return { kind: 'saved', updatedAt: saved.updated_at };
+
+  const current = await getNoteContent(noteId);
+  // Đọc được mà updated_at KHÔNG đổi: UPDATE bị policy chặn (chuyến đã xoá, hết
+  // quyền ghi) chứ không phải trễ nhịp — coi như mất quyền, không lưu lại mãi.
+  if (current && !sameInstant(current.updatedAt, expectedUpdatedAt)) {
+    return { kind: 'stale', current };
+  }
+  throw new DataError(NOTE_NOT_FOUND, '42501');
+}
+
 
 /** Xoá mềm. DB không cho khôi phục. */
 export async function deleteTripNote(noteId: string): Promise<void> {

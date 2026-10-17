@@ -71,7 +71,8 @@ export default defineConfig({
     // Code dùng chung nằm ngoài web/ và import thư viện theo tên trần. Không
     // dedupe thì Vite tìm thư viện ở ../node_modules — trên Vercel thư mục đó
     // không được cài (chỉ web/ được cài), và ở máy dev sẽ ra HAI bản React.
-    dedupe: ['react', 'react-dom', '@supabase/supabase-js'],
+    // yjs + lib0: hai bản Yjs cùng chạy làm hỏng instanceof bên trong Yjs (đồng soạn ghi chú).
+    dedupe: ['react', 'react-dom', '@supabase/supabase-js', 'yjs', 'lib0'],
   },
   server: {
     fs: { allow: [webRoot, mobileSrc] },
@@ -85,6 +86,7 @@ export default defineConfig({
         manualChunks: {
           react: ['react', 'react-dom', 'react-router'],
           supabase: ['@supabase/supabase-js'],
+          yjs: ['yjs'],
         },
       },
     },

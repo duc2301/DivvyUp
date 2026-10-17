@@ -25,6 +25,14 @@ export default {
         negative: 'hsl(var(--negative) / <alpha-value>)',
         sun: 'hsl(var(--sun) / <alpha-value>)',
         rain: 'hsl(var(--rain) / <alpha-value>)',
+        // Con trỏ người khác trong ghi chú đồng soạn (cursorSlot).
+        'cursor-0': 'hsl(var(--cursor-0) / <alpha-value>)',
+        'cursor-1': 'hsl(var(--cursor-1) / <alpha-value>)',
+        'cursor-2': 'hsl(var(--cursor-2) / <alpha-value>)',
+        'cursor-3': 'hsl(var(--cursor-3) / <alpha-value>)',
+        'cursor-4': 'hsl(var(--cursor-4) / <alpha-value>)',
+        'cursor-5': 'hsl(var(--cursor-5) / <alpha-value>)',
+        'cursor-foreground': 'hsl(var(--cursor-foreground) / <alpha-value>)',
         // Chỉ bản web: lớp phủ ảnh bìa và chữ trên ảnh (xem index.css).
         scrim: 'hsl(var(--scrim) / <alpha-value>)',
         'on-image': 'hsl(var(--on-image) / <alpha-value>)',

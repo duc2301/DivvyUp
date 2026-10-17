@@ -36,6 +36,18 @@
     --sun: 38 92% 50%;
     --rain: 205 90% 45%;
 
+    /* Con trỏ người khác trong ghi chú đồng soạn — 6 màu tách hẳn teal thương
+       hiệu; cùng người cùng màu trên mọi máy (cursorSlot trong
+       src/lib/notes/collab.ts). Nhãn tên dùng --cursor-foreground: chữ trắng trên
+       các màu sáng này ≥ 4,5:1 (WCAG AA cho chữ nhỏ). */
+    --cursor-0: 24 95% 38%;
+    --cursor-1: 262 83% 58%;
+    --cursor-2: 217 91% 46%;
+    --cursor-3: 330 81% 44%;
+    --cursor-4: 80 85% 26%;
+    --cursor-5: 142 71% 28%;
+    --cursor-foreground: 0 0% 100%;
+
     /* Riêng bản web: lớp phủ trên ảnh bìa và chữ đặt trên ảnh. Mobile dùng
        bg-black/45 và text-white cho đúng hai việc này; ở đây đặt tên thành
        token để không có mã màu nào nằm ngoài bảng biến. Giống nhau ở hai theme
@@ -72,6 +84,14 @@
 
     --sun: 43 96% 58%;
     --rain: 199 89% 62%;
+
+    --cursor-0: 24 95% 62%;
+    --cursor-1: 262 83% 72%;
+    --cursor-2: 217 91% 68%;
+    --cursor-3: 330 81% 68%;
+    --cursor-4: 80 75% 55%;
+    --cursor-5: 142 69% 55%;
+    --cursor-foreground: 222 47% 11%;
 
     color-scheme: dark;
   }

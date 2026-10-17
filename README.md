@@ -21,7 +21,8 @@ DivvyUp giúp một nhóm bạn ghi lại mọi khoản chi trong chuyến đi v
 - Chia nhóm theo xe, theo phòng, và đặt sẵn số người trong mỗi nhóm.
 - Bạn bè **chưa cần cài app** vẫn được thêm tên vào. Khi họ cài app (hoặc mở trên web), chỉ cần nhập **mã mời** để nhận đúng tên của mình.
 - **Bất kỳ ai trong chuyến** (đã vào bằng mã mời) đều sửa được tên, ngày, ảnh bìa và ghi chú của chuyến — không riêng người tạo.
-- **Ghi chú chuyến đi** có sẵn mẫu Kế hoạch, Lưu ý, Miêu tả để điền nhanh.
+- **Ghi chú chuyến đi** có sẵn mẫu Kế hoạch, Lưu ý, Miêu tả để điền nhanh. Nhiều người **cùng sửa một ghi chú trực tiếp**: thấy con trỏ có màu và tên của nhau, nội dung tự lưu sau khoảng 1,5 giây. Ở chế độ khách, ghi chú chỉ lưu trên máy bạn.
+- **Chủ chuyến xoá được chỗ thành viên chưa ai nhận.** Chỗ đã có người nhận, hoặc còn dính khoản chi/tất toán, thì không xoá được.
 - **Lưu trữ chuyến đi đã xong** để dọn danh sách chính — chỉ ẩn ở phía bạn, người khác trong chuyến không bị ảnh hưởng gì. Chuyến đã qua ngày kết thúc được gắn nhãn "Đã kết thúc"; app nhắc bạn lưu trữ bằng banner "N chuyến đã kết thúc" (có thể chọn *Để sau*). Xem/bỏ lưu trữ ở màn **Lưu trữ**.
 
 ### 💸 Khoản chi
